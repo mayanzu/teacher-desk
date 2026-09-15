@@ -109,7 +109,6 @@ src/
 └── types/             TypeScript 类型
 ```
 
-旧版单文件应用保留在 `legacy/课表.html`，仅用于迁移对照，不参与构建和部署。
 
 ## License
 

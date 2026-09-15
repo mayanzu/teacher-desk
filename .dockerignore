@@ -4,5 +4,4 @@ node_modules
 coverage
 *.log
 preview-*.png
-legacy
 docs

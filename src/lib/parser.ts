@@ -13,6 +13,15 @@ function cleanCell(value: unknown): string {
     .trim();
 }
 
+function stripMarkup(value: unknown, max = 60): string {
+  return cleanCell(value)
+    .replace(/<[^>]*>/g, '')
+    .replace(/[<>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+}
+
 function splitRow(line: string): string[] | null {
   const raw = line.trim();
   if (!raw) return null;
@@ -120,14 +129,20 @@ function parseCoursePart(
 function extractMeta(source: string) {
   const plain = source.replace(/\s+/g, ' ');
   const department =
-    plain.match(/部门\s*[：:]\s*([^|｜\t\n]+?)(?=\s*(?:教师|职称|特殊身份)\s*[：:]|\s*$)/)?.[1] ??
-    plain.match(/部门\s*[：:]\s*([^|｜\t]+)/)?.[1] ??
+    plain.match(/部门\s*[：:]\s*([^|｜\t\n<]+?)(?=\s*(?:教师|职称|特殊身份)\s*[：:]|<|\s*$)/)?.[1] ??
+    plain.match(/部门\s*[：:]\s*([^|｜\t\n<]+)/)?.[1] ??
     '';
   const teacher =
-    plain.match(/教师\s*[：:]\s*([^|｜\t\n]+?)(?=\s*(?:职称|特殊身份|部门)\s*[：:]|\s*$)/)?.[1] ??
-    plain.match(/教师\s*[：:]\s*([^|｜\t]+)/)?.[1] ??
+    plain.match(/教师\s*[：:]\s*([^|｜\t\n<]+?)(?=\s*(?:职称|特殊身份|部门)\s*[：:]|<|\s*$)/)?.[1] ??
+    plain.match(/教师\s*[：:]\s*([^|｜\t\n<]+)/)?.[1] ??
     '';
-  return { department: cleanCell(department), teacher: cleanCell(teacher) };
+  return { department: stripMarkup(department), teacher: stripMarkup(teacher) };
+}
+
+function extractKingoSoftMeta(html: string) {
+  const teacher = html.match(/任课教师\s*[：:]\s*(?:<b>)?([^<\n|｜]{1,40})/)?.[1] ?? '';
+  const department = html.match(/部门\s*[：:]\s*(?:<b>)?([^<\n|｜]{1,60})/)?.[1] ?? '';
+  return { teacher: stripMarkup(teacher), department: stripMarkup(department) };
 }
 
 function resultFromCourses(courses: ParsedCourse[], warnings: string[], source: string): ParsedSchedule {
@@ -330,7 +345,7 @@ export function parseKingoSoftScheduleHtml(html: string): ParsedSchedule {
       warnings.push(`第 ${index + 1} 个课程详情缺少必要字段`);
       return;
     }
-    const parity: WeekParity = timeText.includes('单周') ? 'odd' : timeText.includes('双周') ? 'even' : null;
+    const parity: WeekParity = /单/.test(timeText) ? 'odd' : /双/.test(timeText) ? 'even' : null;
     const room = fields.get('上课地点') || '';
     const clazz = fields.get('合班信息') || '';
     const course: ParsedCourse = {
@@ -352,7 +367,7 @@ export function parseKingoSoftScheduleHtml(html: string): ParsedSchedule {
   });
 
   if (!courses.length) throw new Error('课程详情存在，但没有解析出完整课程');
-  const meta = extractMeta(html);
+  const meta = extractKingoSoftMeta(html);
   const maxWeek = courses.reduce((max, course) => Math.max(max, maxWeekIn(course.weeks)), 0);
   return { ...meta, courses, warnings, maxWeek, source: 'kingosoft' };
 }

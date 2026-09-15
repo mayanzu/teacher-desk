@@ -72,6 +72,19 @@ describe('parseExportTable', () => {
     expect(result.courses.find((course) => course.name === 'B课')?.day).toBe(4);
   });
 
+  it('reads the real weeklesson markup with "(单)" parity and a clean teacher name', () => {
+    const html = `<div id="weekly02_7" class="weeklesson"><ul>
+      <li>课程名称：<b>计算机组成原理实验</b></li>
+      <li>任课教师：<b>马仲军</b></li>
+      <li>上课时间：<b>[7-17周](单) 二[7-8节]</b></li>
+      <li>上课地点：<b>D楼408计算机组成结构实验室</b></li>
+      <li class="last_jcli">合班信息：<b>2025级本科网络工程班</b></li>
+    </ul></div>`;
+    const result = parseKingoSoftScheduleHtml(html);
+    expect(result.teacher).toBe('马仲军');
+    expect(result.courses[0]).toMatchObject({ day: 2, slot: '7-8', weeks: '7-17', parity: 'odd' });
+  });
+
   it('rejects text without weekday headers', () => {
     expect(() => parseExportTable('计算机组成原理 [1-8]周 1-2节 19 F楼404 测试班')).toThrow();
   });

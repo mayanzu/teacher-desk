@@ -20,4 +20,19 @@ describe('buildSluImportPayload', () => {
     expect(payload.courses).toHaveLength(2);
     expect(payload.courses[1].day).toBe(2);
   });
+
+  it('extracts a clean teacher name from weeklesson HTML and keeps last-parity variants', () => {
+    const html = `<div><div id="weekly02_7" class="weeklesson"><ul>
+      <li>课程名称：<b>计算机组成原理实验</b></li>
+      <li>任课教师：<b>马仲军</b></li>
+      <li>上课时间：<b>[7-17周](单) 二[7-8节]</b></li>
+      <li>上课地点：<b>D楼408计算机组成结构实验室</b></li>
+      <li class="last_jcli">合班信息：<b>2025级本科网络工程班</b></li>
+    </ul></div></div>`;
+    const payload = buildSluImportPayload({ status: 'success', htmls: [html], teacher: '', semesterLabel: '' });
+
+    expect(payload.meta.teacher).toBe('马仲军');
+    expect(payload.meta.teacher).not.toContain('<');
+    expect(payload.courses[0]).toMatchObject({ name: '计算机组成原理实验', day: 2, slot: '7-8', weeks: '7-17', parity: 'odd' });
+  });
 });

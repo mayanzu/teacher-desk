@@ -27,6 +27,15 @@ export const sluStatusSchema = z.discriminatedUnion('status', [
 
 export type SluStatusResult = z.infer<typeof sluStatusSchema>;
 
+function cleanLabel(value: unknown, max = 60): string {
+  return String(value ?? '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/[<>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+}
+
 function inferSemesterStart(html: string): string {
   const documentNode = new DOMParser().parseFromString(html, 'text/html');
   const text = documentNode.body.textContent || '';
@@ -58,9 +67,9 @@ export function buildSluImportPayload(result: Extract<SluStatusResult, { status:
   const title = documentNode.body.textContent?.match(/\d{4}-\d{4}学年(?:第[一二]学期)?教学安排表/)?.[0] || '';
   return {
     meta: {
-      teacher: result.teacher || parsed.teacher || '我的课表',
-      department: parsed.department || '',
-      semesterLabel: result.semesterLabel || title || DEFAULT_META.semesterLabel,
+      teacher: cleanLabel(result.teacher) || cleanLabel(parsed.teacher) || '我的课表',
+      department: cleanLabel(parsed.department),
+      semesterLabel: cleanLabel(result.semesterLabel, 30) || cleanLabel(title, 30) || DEFAULT_META.semesterLabel,
       semesterStart: inferSemesterStart(firstHtml),
       totalWeeks: Math.max(20, parsed.maxWeek || 0),
     },

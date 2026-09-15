@@ -101,8 +101,16 @@ async function startSession() {
   return session;
 }
 
+function stripTags(value) {
+  return String(value || '').replace(/<[^>]*>/g, '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim();
+}
+
 function extractPageInfo(text) {
-  const teacher = text.match(/\[[^\]]+\]\s*([^\s<]+)/)?.[1] || '';
+  const teacher = stripTags(
+    text.match(/任课教师\s*[：:]\s*(?:<b>)?([^<\s|｜]{1,40})/)?.[1]
+    || text.match(/教师\s*[：:]\s*(?:<b>)?([^<\s|｜]{1,40})/)?.[1]
+    || '',
+  );
   const semesterLabel = text.match(/\d{4}-\d{4}学年(?:第[一二]学期)?/)?.[0] || '';
   const year = Number(semesterLabel.match(/^(\d{4})-/)?.[1] || new Date().getFullYear());
   const term = semesterLabel.includes('第二学期') ? 1 : 0;

@@ -82,6 +82,17 @@ export default function App() {
   };
 
   const academicSync = useAcademicSync({ onImported: (payload) => handleSaveProfile(payload) });
+  const syncStatus = academicSync.status;
+  const resetSync = academicSync.reset;
+
+  useEffect(() => {
+    if (syncStatus !== 'success') return;
+    const timer = window.setTimeout(() => {
+      setAcademicSyncOpen(false);
+      resetSync();
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [resetSync, syncStatus]);
 
   const toggleReminder = async () => {
     if (reminderEnabled) {

@@ -1,0 +1,64 @@
+/* ==========================================================================
+   课表应用：照片建课表 / 分享（kapp 前缀，与主样式隔离）
+   ========================================================================== */
+.kapp{width:min(780px,calc(100vw - 28px));max-height:88vh;border:1px solid var(--line);border-radius:28px;padding:0;background:var(--surface);color:var(--fg);box-shadow:0 40px 90px -30px rgba(0,0,0,.5);font:400 14px/1.6 var(--font)}
+.kapp::backdrop{background:rgba(10,12,18,.45);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.kapp[open]{display:flex;flex-direction:column}
+.kapp-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:22px 24px 14px}
+.kapp-head h2{margin:0;font-size:19px;font-weight:700;letter-spacing:-.01em}
+.kapp-sub{margin:4px 0 0;font-size:12.5px;color:var(--secondary)}
+.kapp-head .icon-button{flex:none}
+.kapp-body{padding:6px 24px 20px;overflow-y:auto;min-height:120px}
+.kapp-foot{display:flex;align-items:center;gap:10px;padding:14px 24px 20px;border-top:1px solid var(--line-soft)}
+.kapp-foot-spacer{flex:1}
+.kbtn{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 18px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--fg);font:600 14px var(--font);cursor:pointer;transition:transform .15s ease,box-shadow .15s ease}
+.kbtn:hover{transform:translateY(-1px)}
+.kbtn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.kbtn.ghost{background:transparent}
+.kdrop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:200px;padding:28px;border:1.5px dashed var(--line);border-radius:20px;background:var(--surface-2);cursor:pointer;text-align:center;transition:border-color .15s ease,background .15s ease}
+.kdrop:hover,.kdrop.drag{border-color:var(--accent);background:var(--accent-soft)}
+.kdrop svg{width:34px;height:34px;stroke:var(--accent);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.kdrop strong{font-size:15px;font-weight:600}
+.kdrop span{font-size:12.5px;color:var(--secondary);max-width:520px}
+.kapp-note{font-size:12.5px;color:var(--secondary);margin:10px 0 0}
+.kopt{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--fg-2);margin-top:12px;cursor:pointer}
+.kopt input{accent-color:var(--accent)}
+.kapp-actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+.kprogress{height:10px;border-radius:999px;background:var(--surface-2);overflow:hidden;border:1px solid var(--line-soft)}
+.kprogress-bar{height:100%;width:2%;border-radius:999px;background:linear-gradient(90deg,var(--accent),#5ac8fa);transition:width .25s ease}
+.kprogress-txt{margin:10px 0 0;font-size:13px;color:var(--fg-2)}
+.kmeta{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.kmeta label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--fg-2)}
+.kmeta input{height:38px;padding:0 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--fg);font:400 14px var(--font);outline:none}
+.kmeta input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.kapp-hint{font-size:12.5px;color:var(--secondary);margin:0 0 12px}
+.ktable-wrap{overflow:auto;border:1px solid var(--line-soft);border-radius:16px;background:var(--surface)}
+table.ktable{border-collapse:separate;border-spacing:0;width:100%;min-width:560px;font-size:13px}
+.ktable th{position:sticky;top:0;background:var(--surface-2);font-weight:600;color:var(--fg-2);padding:9px 8px;border-bottom:1px solid var(--line-soft);white-space:nowrap;text-align:center}
+.ktable td{border-bottom:1px solid var(--line-soft);padding:4px;vertical-align:top}
+.ktable tr:last-child td{border-bottom:none}
+.ktable .kslot{width:64px;font-weight:600;color:var(--accent-strong);white-space:nowrap;letter-spacing:0}
+.ktable textarea{width:100%;min-width:96px;height:52px;resize:vertical;border:1px solid transparent;border-radius:10px;background:var(--surface-2);padding:7px 8px;font:400 12.5px var(--font);color:var(--fg);outline:none;box-sizing:border-box}
+.ktable textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);background:var(--surface)}
+.ktable textarea:empty{color:var(--fg-3)}
+.ktimes{margin-top:16px;border:1px solid var(--line-soft);border-radius:16px;background:var(--surface)}
+.ktimes summary{cursor:pointer;padding:12px 16px;font-weight:600;font-size:13.5px;color:var(--fg-2)}
+.ktimes table{width:100%;border-collapse:collapse;font-size:13px}
+.ktimes td{padding:6px 16px}
+.ktimes input{height:34px;padding:0 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--fg);font:400 13px var(--font);outline:none;width:110px;box-sizing:border-box}
+.ktimes input[type=time]{width:120px}
+.ktimes .kt-lab{width:86px;font-weight:600;color:var(--accent-strong);border:none;background:transparent}
+.ktimes input:focus{border-color:var(--accent)}
+.kurl-row{display:flex;gap:10px;margin-bottom:16px}
+.kurl{flex:1;min-width:0;height:42px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--fg);font:400 13px var(--font);outline:none}
+.kshare{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
+.kshare canvas{width:200px;height:200px;border:1px solid var(--line-soft);border-radius:16px;background:#fff;padding:8px;box-sizing:border-box}
+.kshare p{margin:8px 0 0;font-size:12.5px;color:var(--secondary);text-align:center}
+.kshare-tips{font-size:13px;color:var(--fg-2);line-height:2}
+.ktoast{position:fixed;left:50%;bottom:84px;transform:translate(-50%,16px);z-index:120;padding:10px 18px;border-radius:999px;background:rgba(29,29,31,.92);color:#fff;font:500 13px var(--font);opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s ease;box-shadow:0 10px 26px -12px rgba(0,0,0,.5)}
+.ktoast.show{opacity:1;transform:translate(-50%,0)}
+@media (max-width:640px){
+  .kfab{right:14px;bottom:18px;padding:11px 15px;font-size:13px}
+  .kapp{width:calc(100vw - 16px);max-height:92vh;border-radius:22px}
+  .kapp-head,.kapp-body,.kapp-foot{padding-left:16px;padding-right:16px}
+}

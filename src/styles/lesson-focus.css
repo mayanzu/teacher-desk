@@ -1,0 +1,82 @@
+/* 课程卡鼠标悬停 / 键盘焦点：高对比漫画贴纸选中态 */
+.lesson {
+  transition: transform .18s cubic-bezier(.22,1.2,.36,1),
+              box-shadow .18s ease,
+              filter .18s ease,
+              background-color .18s ease;
+}
+.lesson:hover,
+.lesson:focus-visible,
+.lesson.is-hover {
+  z-index: 12;
+  transform: translate(-4px, -7px) rotate(0deg) scale(1.025) !important;
+  outline: none;
+  filter: saturate(1.14) contrast(1.04) !important;
+  box-shadow:
+    0 0 0 3px #ffd84f,
+    0 0 0 6px #1c1c22,
+    10px 10px 0 #1c1c22,
+    0 18px 30px rgba(28,28,34,.28) !important;
+}
+.lesson:focus-visible {
+  box-shadow:
+    0 0 0 4px #ffd84f,
+    0 0 0 8px #1c1c22,
+    12px 12px 0 #1c1c22,
+    0 20px 34px rgba(28,28,34,.34) !important;
+}
+.lesson:hover::before,
+.lesson:focus-visible::before,
+.lesson.is-hover::before {
+  width: 34px;
+  height: 9px;
+  background: #e5483c;
+  box-shadow: 0 0 0 2px #1c1c22;
+}
+.lesson:hover::after,
+.lesson:focus-visible::after,
+.lesson.is-hover::after { opacity: .045; }
+.lesson:hover .l-name,
+.lesson:focus-visible .l-name,
+.lesson.is-hover .l-name {
+  background: linear-gradient(transparent 66%, #ffd84f 66%);
+  background-size: 0 100%;
+  background-repeat: no-repeat;
+  animation: lesson-name-highlight .28s ease forwards;
+}
+.lesson:hover .l-time,
+.lesson:focus-visible .l-time,
+.lesson.is-hover .l-time {
+  color: #fffdf6;
+  background: #e5483c;
+  transform: scale(1.06);
+}
+.lesson:hover .l-dot,
+.lesson:focus-visible .l-dot,
+.lesson.is-hover .l-dot {
+  background: #ffd84f;
+  box-shadow: 0 0 0 3px #fffdf6, 0 0 0 5px #1c1c22;
+  transform: scale(1.12);
+}
+.lesson .l-time,
+.lesson .l-dot { transition: transform .18s ease, background-color .18s ease, color .18s ease, box-shadow .18s ease; }
+@keyframes lesson-name-highlight { to { background-size: 100% 100%; } }
+@media (hover: none) {
+  .lesson:hover { transform: none !important; box-shadow: 5px 5px 0 #1c1c22 !important; }
+}
+html[data-theme="dark"] .lesson:hover,
+html[data-theme="dark"] .lesson:focus-visible,
+html[data-theme="dark"] .lesson.is-hover {
+  box-shadow:
+    0 0 0 3px #ffd84f,
+    0 0 0 6px #fff8e7,
+    10px 10px 0 #fff8e7,
+    0 18px 30px rgba(0,0,0,.48) !important;
+}
+html[data-theme="dark"] .lesson:focus-visible {
+  box-shadow:
+    0 0 0 4px #ffd84f,
+    0 0 0 8px #fff8e7,
+    12px 12px 0 #fff8e7,
+    0 20px 34px rgba(0,0,0,.55) !important;
+}

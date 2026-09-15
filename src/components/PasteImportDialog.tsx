@@ -1,0 +1,174 @@
+import { useMemo, useState } from 'react';
+import { X } from 'lucide-react';
+import { DAY_NAMES, BUILDING_TIMES, DEFAULT_TIMES } from '../data/defaults';
+import { SAMPLE_TABLE } from '../data/sample';
+import { useDialog } from '../hooks/useDialog';
+import { parseExportTable } from '../lib/parser';
+import type { ImportPayload, ParsedSchedule } from '../types/schedule';
+
+interface PasteImportDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onSave: (payload: ImportPayload) => void;
+}
+
+function inferSemesterStart() {
+  const now = new Date();
+  const base = now.getMonth() >= 7 ? new Date(now.getFullYear(), 7, 31) : new Date(now.getFullYear(), 1, 24);
+  const day = (base.getDay() + 6) % 7;
+  base.setDate(base.getDate() - day);
+  return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`;
+}
+
+function currentSemesterLabel() {
+  const year = new Date().getFullYear();
+  return new Date().getMonth() >= 7 ? `${year}–${year + 1} 第一学期` : `${year - 1}–${year} 第二学期`;
+}
+
+export function PasteImportDialog({ open, onClose, onSave }: PasteImportDialogProps) {
+  const ref = useDialog(open, onClose);
+  const [step, setStep] = useState(1);
+  const [source, setSource] = useState('');
+  const [parsed, setParsed] = useState<ParsedSchedule | null>(null);
+  const [error, setError] = useState('');
+  const [teacher, setTeacher] = useState('');
+  const [department, setDepartment] = useState('');
+  const [semesterLabel, setSemesterLabel] = useState(currentSemesterLabel);
+  const [semesterStart, setSemesterStart] = useState(inferSemesterStart);
+  const [totalWeeks, setTotalWeeks] = useState(20);
+  const [savedTeacher, setSavedTeacher] = useState('');
+
+  const groups = useMemo(() => {
+    const map = new Map<number, ParsedSchedule['courses']>();
+    parsed?.courses.forEach((course) => {
+      const list = map.get(course.day) || [];
+      list.push(course);
+      map.set(course.day, list);
+    });
+    return [...map.entries()].sort(([a], [b]) => a - b);
+  }, [parsed]);
+
+  function parse() {
+    setError('');
+    if (!source.trim()) {
+      setError('请先粘贴教务处导出的课表表格。');
+      return;
+    }
+    try {
+      const result = parseExportTable(source);
+      setParsed(result);
+      setTeacher(result.teacher || '');
+      setDepartment(result.department || '');
+      setTotalWeeks(Math.max(20, result.maxWeek || 0));
+      setStep(2);
+    } catch (cause) {
+      setParsed(null);
+      setError(cause instanceof Error ? cause.message : '解析失败');
+    }
+  }
+
+  function save() {
+    if (!parsed || !parsed.courses.length) return;
+    if (!semesterStart) {
+      setError('请填写第一周周一日期');
+      return;
+    }
+    const payload: ImportPayload = {
+      meta: {
+        teacher: teacher.trim() || '我的课表',
+        department: department.trim(),
+        semesterLabel: semesterLabel.trim() || currentSemesterLabel(),
+        semesterStart,
+        totalWeeks,
+      },
+      times: DEFAULT_TIMES,
+      timesByBuilding: BUILDING_TIMES,
+      courses: parsed.courses,
+    };
+    onSave(payload);
+    setSavedTeacher(payload.meta.teacher || '我的课表');
+    setStep(3);
+  }
+
+  return (
+    <dialog ref={ref} className="kapp paste-app" aria-labelledby="pasteTitle">
+      <header className="kapp-head">
+        <div>
+          <h2 id="pasteTitle">粘贴教务处课表</h2>
+          <p className="kapp-sub">{step === 1 ? '粘贴表格 → 自动识别 → 保存本机教师档案' : step === 2 ? '校对导入结果' : '保存完成'}</p>
+        </div>
+        <button className="icon-button" type="button" aria-label="关闭" onClick={onClose}><X /></button>
+      </header>
+      <div className="kapp-body">
+        {step === 1 && (
+          <section className="kapp-step">
+            <div className="paste-guideline">
+              <span>① 从教务处网页或 Excel 复制表格</span>
+              <span>② 保持「星期 + 节次 + 课程」结构</span>
+              <span>③ 直接粘贴到下方，无需删表头</span>
+            </div>
+            <textarea
+              className="paste-source"
+              aria-label="粘贴教务处课表"
+              value={source}
+              onChange={(event) => setSource(event.target.value)}
+              placeholder="在这里粘贴教务处课表，支持 Markdown 表格和 Excel 制表符格式。"
+            />
+            <p className="paste-error">{error}</p>
+            <div className="paste-actions">
+              <button className="kbtn ghost" type="button" onClick={() => setSource(SAMPLE_TABLE)}>填入示例</button>
+              <button className="kbtn ghost" type="button" onClick={() => setSource('')}>清空</button>
+              <span className="spacer" />
+              <button className="kbtn primary" type="button" onClick={parse}>解析课表</button>
+            </div>
+          </section>
+        )}
+        {step === 2 && parsed && (
+          <section className="kapp-step">
+            <div className="kmeta paste-meta">
+              <label>教师姓名<input value={teacher} onChange={(event) => setTeacher(event.target.value)} placeholder="如：马仲军" /></label>
+              <label>部门 / 学院<input value={department} onChange={(event) => setDepartment(event.target.value)} placeholder="如：智慧交通现代产业学院" /></label>
+              <label>学期标签<input value={semesterLabel} onChange={(event) => setSemesterLabel(event.target.value)} /></label>
+              <label>第一周周一<input type="date" value={semesterStart} onChange={(event) => setSemesterStart(event.target.value)} /></label>
+              <label>总教学周<input type="number" min={1} max={30} value={totalWeeks} onChange={(event) => setTotalWeeks(Number(event.target.value) || 20)} /></label>
+            </div>
+            <div className="paste-summary"><span>已识别</span><b>{parsed.courses.length}</b><span>个课次 · {groups.length} 个上课日</span></div>
+            {parsed.warnings.length > 0 && <div className="paste-warnings">以下内容需要留意：<br />{parsed.warnings.slice(0, 8).map((warning) => <span key={warning}>{warning}<br /></span>)}</div>}
+            <div className="paste-preview">
+              {groups.map(([day, courses]) => (
+                <section className="paste-day" key={day}>
+                  <h4>{DAY_NAMES[day]}</h4>
+                  <div className="paste-day-list">
+                    {courses.map((course, index) => (
+                      <div className="paste-course" key={`${course.name}-${index}`}>
+                        <span className="paste-course-slot">{course.slot} 节</span>
+                        <div>
+                          <div className="paste-course-name">{course.name}</div>
+                          <div className="paste-course-meta">{[course.room, course.clazz, course.count ? `${course.count} 人` : ''].filter(Boolean).join(' · ')}</div>
+                        </div>
+                        <span className="paste-course-weeks">{course.weeks}周{course.parity === 'odd' ? ' · 单周' : course.parity === 'even' ? ' · 双周' : ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+            <p className="paste-error">{error}</p>
+          </section>
+        )}
+        {step === 3 && (
+          <section className="kapp-step">
+            <div className="paste-summary"><span>已保存教师</span><b>{savedTeacher}</b><span>{parsed?.courses.length || 0} 个课次 · 本机档案</span></div>
+            <p className="kapp-hint">课表已保存在当前浏览器。以后无需重新粘贴，可在教师管理中直接切换。</p>
+          </section>
+        )}
+      </div>
+      <footer className="kapp-foot">
+        <button className="kbtn ghost" type="button" hidden={step === 1} onClick={() => setStep(step === 3 ? 2 : 1)}>上一步</button>
+        <span className="kapp-foot-spacer" />
+        {step === 2 && <button className="kbtn primary" type="button" onClick={save}>保存并打开</button>}
+        {step === 3 && <button className="kbtn primary" type="button" onClick={onClose}>完成</button>}
+      </footer>
+    </dialog>
+  );
+}

@@ -1,0 +1,80 @@
+#root {
+  min-height: 100%;
+}
+
+button svg {
+  display: block;
+}
+
+.paste-cta svg {
+  width: 16px;
+  height: 16px;
+}
+
+.nav-cta {
+  border: 0;
+}
+
+.teacher-switcher svg:last-of-type {
+  flex: none;
+}
+
+.sheet-row strong {
+  display: block;
+  font-size: 14px;
+}
+
+.sheet-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  color: var(--fg-3);
+  font-size: 12px;
+}
+
+.sheet-row-meta svg {
+  width: 13px;
+  height: 13px;
+}
+
+.kapp-head .icon-button,
+.sheet-head .icon-button,
+.drawer-head .icon-button {
+  color: inherit;
+  border-color: currentColor;
+}
+
+.kapp-head .icon-button:hover,
+.sheet-head .icon-button:hover,
+.drawer-head .icon-button:hover {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+.kopt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--fg-2);
+  font-size: 12.5px;
+}
+
+.teacher-card-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.teacher-share-box .kbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 600px) {
+  .sheet-row-meta {
+    font-size: 11px;
+  }
+}

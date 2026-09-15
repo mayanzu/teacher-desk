@@ -1,0 +1,12 @@
+services:
+  timetable:
+    build:
+      context: .
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginx:alpine}
+    image: teacher-timetable:latest
+    container_name: timetable
+    restart: unless-stopped
+    ports:
+      - "8088:80"

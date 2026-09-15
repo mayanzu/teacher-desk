@@ -1,4 +1,4 @@
-import { Sparkles } from 'lucide-react';
+import { ClipboardPaste, QrCode } from 'lucide-react';
 import type { CourseInstance, ScheduleMeta } from '../types/schedule';
 import { formatWeekRange } from '../lib/date';
 import { TeacherSwitcher } from './TeacherSwitcher';
@@ -12,6 +12,7 @@ interface HeroSectionProps {
   todayCount: number;
   weekCount: number;
   onOpenTeacherManager: () => void;
+  onOpenAcademicSync: () => void;
   onOpenPasteImport: () => void;
 }
 
@@ -23,6 +24,7 @@ export function HeroSection({
   todayCount,
   weekCount,
   onOpenTeacherManager,
+  onOpenAcademicSync,
   onOpenPasteImport,
 }: HeroSectionProps) {
   const range = week ? formatWeekRange(meta.semesterStart, week) : '—';
@@ -33,9 +35,13 @@ export function HeroSection({
         <h1 id="pageTitle">第 <span>{week}</span> 周</h1>
         <p className="hero-description">{range}</p>
         <TeacherSwitcher teacher={meta.teacher} onOpen={onOpenTeacherManager} />
-        <button className="paste-cta" type="button" onClick={onOpenPasteImport}>
-          <Sparkles aria-hidden="true" />
-          粘贴我的课表 · 保存本机档案
+        <button className="paste-cta" type="button" onClick={onOpenAcademicSync}>
+          <QrCode aria-hidden="true" />
+          扫码同步教务课表
+        </button>
+        <button className="paste-secondary" type="button" onClick={onOpenPasteImport}>
+          <ClipboardPaste aria-hidden="true" />
+          粘贴课表作为备用
         </button>
       </div>
       <NextClassPanel next={next} now={now} todayCount={todayCount} weekCount={weekCount} weekRange={range} />

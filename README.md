@@ -10,7 +10,12 @@ GitHub: <https://github.com/mayanzu/teacher-timetable>
 
 ![移动端界面](docs/app-mobile.png)
 
+![教务扫码同步](docs/academic-sync.png)
+
 ## 功能
+
+- 默认扫码登录教务系统，无需向课表系统提供账号密码
+- 教务页面同步脚本自动读取当前学期课表
 
 - 多教师档案：同一浏览器保存多位老师课表，随时切换
 - 粘贴导入：识别教务处 Markdown、网页表格和 Excel 制表符格式
@@ -35,6 +40,19 @@ GitHub: <https://github.com/mayanzu/teacher-timetable>
 - Lucide React
 - Tesseract.js
 - Docker + Nginx
+
+## 教务扫码同步
+
+首次使用时，老师在课程页面点击“扫码同步教务课表”，按提示安装油猴脚本。之后每次同步只需：
+
+1. 点击“开始扫码登录”。
+2. 使用手机扫描学校官方登录页二维码。
+3. 同步脚本读取已登录页面中的课表。
+4. 课表自动保存到当前浏览器的教师档案。
+
+课表系统不会接收或保存教务账号密码。扫码登录会话只保留在教务系统域名内。
+
+同步脚本地址：`/slu-jwxt-sync.user.js`
 
 ## 本地开发
 

@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc -b --pretty false",
     "format": "prettier --write .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "check:userscript": "node --check public/slu-jwxt-sync.user.js"
   },
   "dependencies": {
     "date-fns": "^4.4.0",

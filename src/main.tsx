@@ -10,6 +10,7 @@ import './styles/paste-import.css';
 import './styles/lesson-focus.css';
 import './styles/mobile.css';
 import './styles/teacher.css';
+import './styles/academic-sync.css';
 import './styles/modern.css';
 
 createRoot(document.getElementById('root')!).render(

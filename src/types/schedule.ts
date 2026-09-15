@@ -47,6 +47,7 @@ export interface ParsedCourse extends Course {
 }
 
 export interface ParsedSchedule {
+  source?: 'structured' | 'plain' | 'html';
   teacher: string;
   department: string;
   courses: ParsedCourse[];

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SAMPLE_TABLE } from '../data/sample';
-import { parseExportTable } from './parser';
+import { parseExportTable, parseHtmlTable, parseScheduleText } from './parser';
 
 describe('parseExportTable', () => {
   it('parses the教务处 Markdown table', () => {
@@ -10,6 +10,38 @@ describe('parseExportTable', () => {
     expect(result.courses).toHaveLength(7);
     expect(result.courses.some((course) => course.day === 5 && course.slot === '3-4')).toBe(true);
     expect(result.courses.find((course) => course.name === '计算机组成原理实验')?.parity).toBe('odd');
+  });
+
+  it('recovers a plain-text clipboard table with unknown day columns', () => {
+    const source = `部门：智慧交通现代产业学院教师：孙佳悦职称：
+星期一\t星期二\t星期三\t星期四\t星期五\t星期六
+上
+午\t一\t
+数据结构与算法课程设计 [16-17]周 1-2节 19 D楼304移动互联开发实验室 2025级本科网络工程班
+数据结构与算法课程设计 [16-17]周 1-2节 19 D楼304移动互联开发实验室 2025级本科网络工程班
+离散数学 [2-17]周 3-4节 19 D楼208(多) 2025级本科网络工程班
+下
+午\t三\t
+数据结构与算法 [2-17]周 5-6节 19 H楼505（多） 2025级本科网络工程班`;
+    const result = parseScheduleText(source);
+    expect(result.source).toBe('plain');
+    expect(result.teacher).toBe('孙佳悦');
+    expect(result.department).toBe('智慧交通现代产业学院');
+    expect(result.courses).toHaveLength(4);
+    expect(result.warnings[0]).toContain('丢失了表格列位置');
+  });
+
+  it('parses the numeric period structure used by KingoSoft HTML', () => {
+    const html = `<table>
+      <tr><td>时段</td><td>节次</td><td>一<br>09-14</td><td>二<br>09-15</td><td>三<br>09-16</td></tr>
+      <tr><td rowspan="2">上午</td><td>1(08:10-08:55)</td><td>离散数学 [2-17]周 1-2节 19 D楼208(多) 2025级本科网络工程班</td><td></td><td></td></tr>
+      <tr><td>2(09:00-09:45)</td><td></td><td>数据结构与算法 [2-17]周 1-2节 19 H楼505（多） 2025级本科网络工程班</td><td></td></tr>
+    </table>`;
+    const result = parseHtmlTable(html);
+    expect(result.source).toBe('html');
+    expect(result.courses).toHaveLength(2);
+    expect(result.courses[0].slot).toBe('1-2');
+    expect(result.courses[1].day).toBe(2);
   });
 
   it('rejects text without weekday headers', () => {

@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Copy, Download, FileUp, Plus, Trash2, UserRound, X } from 'lucide-react';
+import { Copy, Download, FileUp, Plus, QrCode, Trash2, UserRound, X } from 'lucide-react';
 import { useDialog } from '../hooks/useDialog';
 import { useTeacherProfiles } from '../context/TeacherProfilesContext';
 import { useToast } from '../context/ToastContext';
@@ -9,9 +9,10 @@ interface TeacherManagerDialogProps {
   open: boolean;
   onClose: () => void;
   onOpenPaste: () => void;
+  onOpenAcademicSync: () => void;
 }
 
-export function TeacherManagerDialog({ open, onClose, onOpenPaste }: TeacherManagerDialogProps) {
+export function TeacherManagerDialog({ open, onClose, onOpenPaste, onOpenAcademicSync }: TeacherManagerDialogProps) {
   const ref = useDialog(open, onClose);
   const inputRef = useRef<HTMLInputElement>(null);
   const { notify } = useToast();
@@ -93,7 +94,8 @@ export function TeacherManagerDialog({ open, onClose, onOpenPaste }: TeacherMana
         <button className="kbtn ghost" type="button" onClick={() => inputRef.current?.click()}><FileUp size={15} />导入 JSON</button>
         <button className="kbtn ghost" type="button" onClick={exportAll}><Download size={15} />导出全部</button>
         <span className="kapp-foot-spacer" />
-        <button className="kbtn primary" type="button" onClick={onOpenPaste}><UserRound size={15} />粘贴新教师课表</button>
+        <button className="kbtn ghost" type="button" onClick={onOpenPaste}><UserRound size={15} />粘贴课表</button>
+        <button className="kbtn primary" type="button" onClick={onOpenAcademicSync}><QrCode size={15} />扫码同步</button>
       </footer>
     </dialog>
   );

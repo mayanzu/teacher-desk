@@ -33,9 +33,28 @@ function isSeparator(row: string[]): boolean {
   return row.length > 0 && row.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s/g, '')));
 }
 
+function slotFromText(value: string): string {
+  const text = cleanCell(value).replace(/\s+/g, '');
+  const chinese = text.match(/^[一二三四五六]$/);
+  if (chinese) return SLOT_MAP[chinese[0]];
+  const single = text.match(/^(?:第)?(\d{1,2})(?:\D|$)/);
+  if (single) {
+    const period = Number(single[1]);
+    const start = period % 2 === 1 ? period : period - 1;
+    return `${start}-${start + 1}`;
+  }
+  const range = text.match(/(\d+)\s*[-—–~至]\s*(\d+)/);
+  if (range) {
+    const first = Number(range[1]);
+    const start = first % 2 === 1 ? first : first - 1;
+    return `${start}-${start + 1}`;
+  }
+  return '';
+}
+
 function dayFromHeader(cell: string): number {
   const text = cell.replace(/\s/g, '').replace(/星期/g, '周');
-  const match = text.match(/周([一二三四五六日天])/);
+  const match = text.match(/(?:周|^)([一二三四五六日天])/);
   return match ? DAY_NUM[match[1]] ?? 0 : 0;
 }
 
@@ -98,6 +117,26 @@ function parseCoursePart(
   };
 }
 
+function extractMeta(source: string) {
+  const plain = source.replace(/\s+/g, ' ');
+  const department =
+    plain.match(/部门\s*[：:]\s*([^|｜\t\n]+?)(?=\s*(?:教师|职称|特殊身份)\s*[：:]|\s*$)/)?.[1] ??
+    plain.match(/部门\s*[：:]\s*([^|｜\t]+)/)?.[1] ??
+    '';
+  const teacher =
+    plain.match(/教师\s*[：:]\s*([^|｜\t\n]+?)(?=\s*(?:职称|特殊身份|部门)\s*[：:]|\s*$)/)?.[1] ??
+    plain.match(/教师\s*[：:]\s*([^|｜\t]+)/)?.[1] ??
+    '';
+  return { department: cleanCell(department), teacher: cleanCell(teacher) };
+}
+
+function resultFromCourses(courses: ParsedCourse[], warnings: string[], source: string): ParsedSchedule {
+  if (!courses.length) throw new Error('表格识别成功，但没有解析到课程');
+  const meta = extractMeta(source);
+  const maxWeek = courses.reduce((max, course) => Math.max(max, maxWeekIn(course.weeks)), 0);
+  return { ...meta, courses, warnings, maxWeek, source: 'structured' };
+}
+
 export function parseExportTable(text: string): ParsedSchedule {
   const source = String(text ?? '').replace(/\r/g, '');
   const rows = source
@@ -105,7 +144,7 @@ export function parseExportTable(text: string): ParsedSchedule {
     .map(splitRow)
     .filter((row): row is string[] => Boolean(row?.length) && !isSeparator(row as string[]));
   const headerIndex = rows.findIndex((row) => row.some((cell) => dayFromHeader(cell)));
-  if (headerIndex < 0) throw new Error('没有找到「星期一 / 星期二」表头，请粘贴完整的教务处课表表格');
+  if (headerIndex < 0) throw new Error('没有找到「星期一 / 星期二」表头');
 
   const dayColumns: number[] = [];
   rows[headerIndex].forEach((cell, index) => {
@@ -119,18 +158,17 @@ export function parseExportTable(text: string): ParsedSchedule {
 
   for (let rowIndex = headerIndex + 1; rowIndex < rows.length; rowIndex += 1) {
     const row = rows[rowIndex];
-    let slotToken = '';
+    let slot = '';
     let slotIndex = -1;
     for (let index = 0; index < Math.min(row.length, 6); index += 1) {
-      const token = row[index].trim();
-      if (/^[一二三四五六]$/.test(token)) {
-        slotToken = token;
+      const candidate = slotFromText(row[index]);
+      if (candidate) {
+        slot = candidate;
         slotIndex = index;
         break;
       }
     }
-    if (!slotToken || slotIndex < 0) continue;
-    const slot = SLOT_MAP[slotToken];
+    if (!slot || slotIndex < 0) continue;
     const dayStart = slotIndex + 1;
     dayColumns.forEach((_, dayIndex) => {
       const day = dayIndex + 1;
@@ -149,12 +187,123 @@ export function parseExportTable(text: string): ParsedSchedule {
         });
     });
   }
+  return resultFromCourses(courses, warnings, source);
+}
 
-  if (!courses.length) throw new Error('表格识别成功，但没有解析到课程');
+export function parsePlainTextSchedule(text: string): ParsedSchedule {
+  const source = String(text ?? '').replace(/\r/g, '');
+  const lines = source.split('\n');
+  const headerIndex = lines.findIndex((line) => (line.match(/(?:星期|周)[一二三四五六日天]/g) ?? []).length >= 2);
+  if (headerIndex < 0) throw new Error('没有找到「星期一 / 星期二」表头，请检查粘贴内容');
 
-  const plain = source.replace(/\s+/g, ' ');
-  const department = plain.match(/部门\s*[：:]\s*([^|｜\t]+)/)?.[1] ?? '';
-  const teacher = plain.match(/教师\s*[：:]\s*([^|｜\t]+)/)?.[1] ?? '';
+  const dayTokens = lines[headerIndex].match(/(?:星期|周)[一二三四五六日天]/g) ?? [];
+  const days = dayTokens.map((token) => DAY_NUM[token.replace(/^(星期|周)/, '')]).filter(Boolean);
+  const usableDays = days.length ? days : [1, 2, 3, 4, 5, 6];
+  const warnings = ['纯文本粘贴丢失了表格列位置，系统已按课程出现顺序暂分配到星期，请在保存前逐项核对。'];
+  const courses: ParsedCourse[] = [];
+  let currentSlot = '';
+  let bucket: string[] = [];
+
+  const flush = () => {
+    if (!currentSlot || !bucket.length) return;
+    bucket.forEach((courseText, index) => {
+      const day = usableDays[index % usableDays.length];
+      const context = `第 ${currentSlot} 节第 ${index + 1} 个课程`;
+      const course = parseCoursePart(courseText, day, currentSlot, context, warnings);
+      if (!course) return;
+      if (index >= usableDays.length) warnings.push(`${context}：同一节次课程超过星期列数，已循环分配星期`);
+      courses.push(course);
+    });
+    bucket = [];
+  };
+
+  lines.slice(headerIndex + 1).forEach((line) => {
+    const raw = line.trim();
+    if (!raw) return;
+    const compact = raw.replace(/[\s\t]+/g, '');
+    const slotMatch = compact.match(/^([上下晚午]*)([一二三四五六])$/);
+    if (slotMatch && !/[［[]/.test(raw) && !raw.includes('节')) {
+      flush();
+      currentSlot = SLOT_MAP[slotMatch[2]];
+      return;
+    }
+    if (!currentSlot) return;
+    if (/[［[]\d/.test(raw) || raw.includes('节')) {
+      bucket.push(raw);
+    } else if (bucket.length) {
+      bucket[bucket.length - 1] += raw;
+    }
+  });
+  flush();
+
+  const meta = extractMeta(source);
   const maxWeek = courses.reduce((max, course) => Math.max(max, maxWeekIn(course.weeks)), 0);
-  return { department: cleanCell(department), teacher: cleanCell(teacher), courses, warnings, maxWeek };
+  if (!courses.length) throw new Error('识别到星期表头，但没有提取到课程');
+  return { ...meta, courses, warnings, maxWeek, source: 'plain' };
+}
+
+interface PendingCell {
+  remaining: number;
+  text: string;
+}
+
+export function parseHtmlTable(html: string): ParsedSchedule {
+  const documentNode = new DOMParser().parseFromString(html, 'text/html');
+  const table = documentNode.querySelector('table');
+  if (!table) throw new Error('剪贴板中没有可识别的 HTML 表格');
+  const rows: string[][] = [];
+  const pending = new Map<number, PendingCell>();
+
+  const ensureRow = (index: number) => {
+    while (rows.length <= index) rows.push([]);
+    return rows[index];
+  };
+
+  Array.from(table.querySelectorAll('tr')).forEach((rowNode, rowIndex) => {
+    const row = ensureRow(rowIndex);
+    let column = 0;
+    Array.from(rowNode.children).forEach((cellNode) => {
+      while (row[column] !== undefined) column += 1;
+      const cell = cellNode as HTMLTableCellElement;
+      const clone = cell.cloneNode(true) as HTMLElement;
+      clone.querySelectorAll('br').forEach((node) => node.replaceWith('\n'));
+      clone.querySelectorAll('li,div,p').forEach((node) => node.append(' '));
+      const text = cleanCell((clone.textContent || '').replace(/\s*\n\s*/g, '；'));
+      const colspan = Math.max(1, cell.colSpan || 1);
+      const rowspan = Math.max(1, cell.rowSpan || 1);
+      for (let columnOffset = 0; columnOffset < colspan; columnOffset += 1) {
+        const targetColumn = column + columnOffset;
+        row[targetColumn] = columnOffset === 0 ? text : '';
+        if (rowspan > 1) pending.set(targetColumn, { remaining: rowspan - 1, text: '' });
+      }
+      column += colspan;
+    });
+
+    [...pending.entries()].forEach(([targetColumn, pendingCell]) => {
+      if (pendingCell.remaining <= 0) return;
+      const targetRow = ensureRow(rowIndex + 1);
+      if (targetRow[targetColumn] === undefined) targetRow[targetColumn] = pendingCell.text;
+      pendingCell.remaining -= 1;
+      if (pendingCell.remaining <= 0) pending.delete(targetColumn);
+    });
+  });
+
+  const markdown = rows
+    .filter((row) => row.some((cell) => String(cell || '').trim()))
+    .map((row) => `| ${row.map((cell) => cell || '').join(' | ')} |`)
+    .join('\n');
+  const parsed = parseExportTable(markdown);
+  return { ...parsed, source: 'html' };
+}
+
+export function parseScheduleText(text: string): ParsedSchedule {
+  const source = String(text ?? '').trim();
+  if (/<table[\s>]/i.test(source)) return parseHtmlTable(source);
+  try {
+    const structured = parseExportTable(source);
+    if (structured.courses.length) return structured;
+  } catch {
+    // Fall through to plain-text reconstruction.
+  }
+  return parsePlainTextSchedule(source);
 }

@@ -46,7 +46,9 @@
 .paste-day{display:grid;grid-template-columns:62px minmax(0,1fr);gap:10px}
 .paste-day h4{position:sticky;top:0;align-self:start;margin:0;padding:7px 5px;color:#fffdf6;background:#2b7eb9;border:2px solid #1c1c22;border-radius:8px;text-align:center;font-size:12px;font-weight:900}
 .paste-day-list{display:grid;gap:8px}
-.paste-course{display:grid;grid-template-columns:74px minmax(0,1fr) auto;gap:9px;align-items:center;padding:9px 11px;background:#fffdf6;border:2px solid #1c1c22;border-radius:9px;box-shadow:2px 2px 0 #1c1c22}
+.paste-course{display:grid;grid-template-columns:82px 72px minmax(0,1fr) auto;gap:9px;align-items:center;padding:9px 11px;background:#fffdf6;border:2px solid #1c1c22;border-radius:9px;box-shadow:2px 2px 0 #1c1c22}
+.paste-day-select{display:flex;flex-direction:column;gap:2px;font-size:9px;font-weight:900;color:#625c66}
+.paste-day-select select{width:100%;height:28px;padding:0 4px;border:1.5px solid #1c1c22;border-radius:6px;background:#fff3a9;font:800 10px var(--font);color:#1c1c22}
 .paste-course-slot{padding:4px 7px;color:#fffdf6;background:#1c1c22;border-radius:999px;text-align:center;font-size:11px;font-weight:900}
 .paste-course-name{font-size:13.5px;font-weight:1000}
 .paste-course-meta{color:#625c66;font-size:11px;font-weight:700;line-height:1.55}
@@ -58,7 +60,8 @@
   .kfab{right:14px!important;bottom:76px!important;padding:10px 13px 9px!important}
   .paste-guideline,.paste-meta{grid-template-columns:1fr}
   .paste-source{min-height:245px;font-size:12px}
-  .paste-course{grid-template-columns:68px minmax(0,1fr);}
+  .paste-course{grid-template-columns:76px 62px minmax(0,1fr);}
+  .paste-course-weeks{grid-column:3;justify-self:start}
   .paste-course-weeks{grid-column:2;justify-self:start}
   .paste-day{grid-template-columns:52px minmax(0,1fr)}
 }

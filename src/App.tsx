@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { AcademicSyncDialog } from './components/AcademicSyncDialog';
 import { AppHeader } from './components/AppHeader';
 import { CourseDetailDialog } from './components/CourseDetailDialog';
 import { HeroSection } from './components/HeroSection';
@@ -9,6 +10,7 @@ import { SettingsDrawer } from './components/SettingsDrawer';
 import { TeacherManagerDialog } from './components/TeacherManagerDialog';
 import { ToastViewport } from './components/ToastViewport';
 import { BUILDING_TIMES, DEFAULT_TIMES } from './data/defaults';
+import { useAcademicSync } from './hooks/useAcademicSync';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useMotion } from './hooks/useMotion';
 import { useNow } from './hooks/useNow';
@@ -34,6 +36,7 @@ export default function App() {
   const setWeek = (week: number) => setWeekSelection({ profileId: activeProfile.id, week: Math.min(activeProfile.meta.totalWeeks, Math.max(1, week)) });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [teacherOpen, setTeacherOpen] = useState(false);
+  const [academicSyncOpen, setAcademicSyncOpen] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(false);
   const [selectedCourses, setSelectedCourses] = useState<Course[]>([]);
@@ -73,6 +76,8 @@ export default function App() {
     notify(`${saved.meta.teacher} 的课表已保存到本机档案`);
     close?.();
   };
+
+  const academicSync = useAcademicSync({ onImported: (payload) => handleSaveProfile(payload) });
 
   const toggleReminder = async () => {
     if (reminderEnabled) {
@@ -124,6 +129,7 @@ export default function App() {
           todayCount={todayCount}
           weekCount={weekCount}
           onOpenTeacherManager={() => setTeacherOpen(true)}
+          onOpenAcademicSync={() => { setAcademicSyncOpen(true); academicSync.start(); }}
           onOpenPasteImport={() => setPasteOpen(true)}
         />
         <ScheduleSection
@@ -165,6 +171,14 @@ export default function App() {
         open={teacherOpen}
         onClose={() => setTeacherOpen(false)}
         onOpenPaste={() => { setTeacherOpen(false); setPasteOpen(true); }}
+        onOpenAcademicSync={() => { setTeacherOpen(false); setAcademicSyncOpen(true); academicSync.start(); }}
+      />
+      <AcademicSyncDialog
+        open={academicSyncOpen}
+        status={academicSync.status}
+        message={academicSync.message}
+        onStart={academicSync.start}
+        onClose={() => { setAcademicSyncOpen(false); academicSync.reset(); }}
       />
       <PasteImportDialog
         open={pasteOpen}

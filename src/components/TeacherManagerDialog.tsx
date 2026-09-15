@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Copy, Download, FileUp, Plus, QrCode, Trash2, UserRound, X } from 'lucide-react';
+import { Download, FileUp, Plus, QrCode, Trash2, UserRound, X } from 'lucide-react';
 import { useDialog } from '../hooks/useDialog';
 import { useTeacherProfiles } from '../context/TeacherProfilesContext';
 import { useToast } from '../context/ToastContext';
@@ -25,17 +25,7 @@ export function TeacherManagerDialog({ open, onClose, onOpenPaste, onOpenAcademi
     exportProfile,
     exportAll,
     importProfiles,
-    systemUrl,
   } = useTeacherProfiles();
-
-  async function copySystemUrl() {
-    try {
-      await navigator.clipboard.writeText(systemUrl);
-      notify('系统地址已复制');
-    } catch {
-      notify('复制失败，请手动复制');
-    }
-  }
 
   async function importFile(file?: File) {
     if (!file) return;
@@ -63,10 +53,6 @@ export function TeacherManagerDialog({ open, onClose, onOpenPaste, onOpenAcademi
             <h3>{activeProfile.meta.teacher}</h3>
             <p>{joinMeta([activeProfile.meta.department, activeProfile.meta.semesterLabel, activeProfile.courses.length + ' 个课次'])}</p>
           </div>
-        </div>
-        <div className="teacher-share-box">
-          <p>分享系统时，只发送站点地址即可。其他老师打开后粘贴自己的课表，系统会自动保存在他们本机；不会生成个人分享链接。</p>
-          <button className="kbtn" type="button" onClick={copySystemUrl}><Copy size={15} />复制系统地址</button>
         </div>
         <div className="teacher-list">
           {profiles.map((profile) => {

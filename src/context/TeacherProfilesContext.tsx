@@ -111,7 +111,6 @@ interface TeacherProfilesContextValue {
   exportProfile: (id: string) => void;
   exportAll: () => void;
   importProfiles: (file: File) => Promise<number>;
-  systemUrl: string;
 }
 
 const TeacherProfilesContext = createContext<TeacherProfilesContextValue | null>(null);
@@ -207,12 +206,6 @@ export function TeacherProfilesProvider({ children }: { children: ReactNode }) {
   }, [persistProfiles, profiles]);
 
   const activeProfile = profiles.find((profile) => profile.id === activeId) || profiles[0];
-  const systemUrl = useMemo(() => {
-    const url = new URL(window.location.href);
-    url.search = '';
-    url.hash = '';
-    return url.toString();
-  }, []);
   const value = useMemo<TeacherProfilesContextValue>(() => ({
     profiles,
     activeProfile,
@@ -224,8 +217,7 @@ export function TeacherProfilesProvider({ children }: { children: ReactNode }) {
     exportProfile,
     exportAll,
     importProfiles,
-    systemUrl,
-  }), [activeProfile, activate, duplicateProfile, exportAll, exportProfile, importProfiles, profiles, removeProfile, systemUrl, upsertProfile]);
+  }), [activeProfile, activate, duplicateProfile, exportAll, exportProfile, importProfiles, profiles, removeProfile, upsertProfile]);
 
   return <TeacherProfilesContext.Provider value={value}>{children}</TeacherProfilesContext.Provider>;
 }

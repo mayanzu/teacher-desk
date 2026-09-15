@@ -67,12 +67,6 @@ button svg {
   gap: 4px;
 }
 
-.teacher-share-box .kbtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
 @media (max-width: 600px) {
   .sheet-row-meta {
     font-size: 11px;

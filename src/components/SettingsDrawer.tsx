@@ -44,7 +44,7 @@ export function SettingsDrawer({
         <div className="drawer-body">
           <section className="setting-group">
             <h3><UsersRound />教师课表管理</h3>
-            <p className="field-note">在当前浏览器保存多位老师课表，随时切换；无需个人分享链接。</p>
+            <p className="field-note">在当前浏览器保存多位老师课表，随时切换。</p>
             <button className="button primary teacher-drawer-btn" type="button" onClick={onOpenTeacherManager}>打开教师管理</button>
           </section>
           <section className="setting-group">

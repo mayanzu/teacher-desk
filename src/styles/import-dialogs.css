@@ -1,5 +1,5 @@
 /* ==========================================================================
-   课表应用：照片建课表 / 分享（kapp 前缀，与主样式隔离）
+   课表应用：扫码、粘贴和照片导入（kapp 前缀，与主样式隔离）
    ========================================================================== */
 .kapp{width:min(780px,calc(100vw - 28px));max-height:88vh;border:1px solid var(--line);border-radius:28px;padding:0;background:var(--surface);color:var(--fg);box-shadow:0 40px 90px -30px rgba(0,0,0,.5);font:400 14px/1.6 var(--font)}
 .kapp::backdrop{background:rgba(10,12,18,.45);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}

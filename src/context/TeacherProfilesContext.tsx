@@ -36,7 +36,6 @@ const profileSchema = z.object({
   builtin: z.boolean().optional(),
 });
 
-const profilesSchema = z.array(profileSchema);
 const PROFILE_KEY = 'kb-teacher-profiles-v1';
 const ACTIVE_KEY = 'kb-active-teacher';
 
@@ -58,31 +57,73 @@ function builtinProfile(): TeacherProfile {
   };
 }
 
+function writeProfiles(profiles: TeacherProfile[]): boolean {
+  try {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function writeActive(id: string) {
+  try {
+    localStorage.setItem(ACTIVE_KEY, id);
+  } catch {
+    // Storage unavailable; the active profile still works for this session.
+  }
+}
+
+function readActive(fallback: string): string {
+  try {
+    const saved = localStorage.getItem(ACTIVE_KEY);
+    return saved ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function readProfiles(): TeacherProfile[] {
   try {
-    const parsed = profilesSchema.safeParse(JSON.parse(localStorage.getItem(PROFILE_KEY) || '[]'));
-    if (parsed.success && parsed.data.length) return parsed.data as TeacherProfile[];
+    const raw = localStorage.getItem(PROFILE_KEY);
+    if (raw) {
+      const items: unknown = JSON.parse(raw);
+      if (Array.isArray(items) && items.length) {
+        const valid: TeacherProfile[] = [];
+        items.forEach((item) => {
+          const result = profileSchema.safeParse(item);
+          if (result.success) valid.push(result.data as TeacherProfile);
+        });
+        if (valid.length) {
+          if (valid.length !== items.length) writeProfiles(valid);
+          return valid;
+        }
+        try {
+          localStorage.setItem(`${PROFILE_KEY}-corrupt-${Date.now()}`, raw);
+        } catch {
+          // Keep going even if the backup cannot be written.
+        }
+      }
+    }
   } catch {
     // Ignore corrupt local data and seed the built-in profile.
   }
   const seed = [builtinProfile()];
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(seed));
-  localStorage.setItem(ACTIVE_KEY, seed[0].id);
+  writeProfiles(seed);
+  writeActive(seed[0].id);
   return seed;
-}
-
-function persist(profiles: TeacherProfile[]) {
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles));
 }
 
 function normalizePayload(payload: ImportPayload): TeacherProfile {
   const now = new Date().toISOString();
+  const totalWeeks = Math.min(30, Math.max(1, Math.round(Number(payload.meta.totalWeeks) || DEFAULT_META.totalWeeks)));
   return {
     id: uid(),
     meta: metaSchema.parse({
       ...DEFAULT_META,
       ...payload.meta,
-      totalWeeks: payload.meta.totalWeeks || 20,
+      semesterStart: payload.meta.semesterStart || DEFAULT_META.semesterStart,
+      totalWeeks,
     }),
     times: payload.times || DEFAULT_TIMES,
     timesByBuilding: payload.timesByBuilding,
@@ -118,18 +159,18 @@ const TeacherProfilesContext = createContext<TeacherProfilesContextValue | null>
 export function TeacherProfilesProvider({ children }: { children: ReactNode }) {
   const [profiles, setProfiles] = useState<TeacherProfile[]>(readProfiles);
   const [activeId, setActiveId] = useState(() => {
-    const saved = localStorage.getItem(ACTIVE_KEY);
-    return profiles.some((profile) => profile.id === saved) ? saved! : profiles[0].id;
+    const saved = readActive(profiles[0].id);
+    return profiles.some((profile) => profile.id === saved) ? saved : profiles[0].id;
   });
 
   const persistProfiles = useCallback((next: TeacherProfile[]) => {
     setProfiles(next);
-    persist(next);
+    writeProfiles(next);
   }, []);
 
   const activate = useCallback((id: string) => {
     if (!profiles.some((profile) => profile.id === id)) return;
-    localStorage.setItem(ACTIVE_KEY, id);
+    writeActive(id);
     setActiveId(id);
   }, [profiles]);
 
@@ -147,7 +188,7 @@ export function TeacherProfilesProvider({ children }: { children: ReactNode }) {
     }
     persistProfiles(next);
     if (activate) {
-      localStorage.setItem(ACTIVE_KEY, saved.id);
+      writeActive(saved.id);
       setActiveId(saved.id);
     }
     return saved;
@@ -158,7 +199,7 @@ export function TeacherProfilesProvider({ children }: { children: ReactNode }) {
     const next = profiles.filter((profile) => profile.id !== id);
     persistProfiles(next);
     if (activeId === id) {
-      localStorage.setItem(ACTIVE_KEY, next[0].id);
+      writeActive(next[0].id);
       setActiveId(next[0].id);
     }
   }, [activeId, persistProfiles, profiles]);

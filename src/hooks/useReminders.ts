@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { currentWeekNumber } from '../lib/date';
 import { isCourseActive, courseInstance } from '../lib/schedule';
 import type { BuildingTimes, Course, ScheduleMeta, ScheduleTimes } from '../types/schedule';
 
@@ -27,7 +28,7 @@ export function useReminders({
     if (!enabled || !('Notification' in window) || Notification.permission !== 'granted') return;
     const check = () => {
       const now = new Date();
-      const currentWeek = Math.max(1, Math.round((now.getTime() - new Date(meta.semesterStart).getTime()) / 604_800_000) + 1);
+      const currentWeek = currentWeekNumber(meta.semesterStart, meta.totalWeeks, now);
       courses.forEach((course, index) => {
         if (!isCourseActive(course, currentWeek, meta.totalWeeks)) return;
         const instance = courseInstance(course, currentWeek, meta.semesterStart, times, buildingTimes);

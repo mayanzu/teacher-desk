@@ -26,8 +26,8 @@ export function isCourseActive(course: Course, week: number, totalWeeks: number)
 }
 
 export function courseTime(course: Course, times: ScheduleTimes, buildingTimes: BuildingTimes): [string, string] {
-  const source = (course.bld && buildingTimes[course.bld]) || times;
-  return source[course.slot] || ['--:--', '--:--'];
+  const buildingSlot = course.bld ? buildingTimes[course.bld]?.[course.slot] : undefined;
+  return buildingSlot || times[course.slot] || ['--:--', '--:--'];
 }
 
 function timeParts(value: string): [number, number] {

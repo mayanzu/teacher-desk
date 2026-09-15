@@ -72,9 +72,13 @@ export default function App() {
   }, [courses, meta.totalWeeks, viewWeek]);
 
   const handleSaveProfile = (payload: ImportPayload, close?: () => void) => {
-    const saved = upsertProfile(payload, true);
-    notify(`${saved.meta.teacher} 的课表已保存到本机档案`);
-    close?.();
+    try {
+      const saved = upsertProfile(payload, true);
+      notify(`${saved.meta.teacher} 的课表已保存到本机档案`);
+      close?.();
+    } catch (error) {
+      notify(`保存失败：${error instanceof Error ? error.message : '数据校验未通过'}`);
+    }
   };
 
   const academicSync = useAcademicSync({ onImported: (payload) => handleSaveProfile(payload) });

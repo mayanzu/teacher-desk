@@ -146,10 +146,9 @@ export function parseExportTable(text: string): ParsedSchedule {
   const headerIndex = rows.findIndex((row) => row.some((cell) => dayFromHeader(cell)));
   if (headerIndex < 0) throw new Error('没有找到「星期一 / 星期二」表头');
 
-  const dayColumns: number[] = [];
-  rows[headerIndex].forEach((cell, index) => {
-    if (dayFromHeader(cell)) dayColumns.push(index);
-  });
+  const dayColumns = rows[headerIndex]
+    .map((cell) => dayFromHeader(cell))
+    .filter((day) => day > 0);
   if (!dayColumns.length) throw new Error('没有识别出星期列');
 
   const warnings: string[] = [];
@@ -170,8 +169,7 @@ export function parseExportTable(text: string): ParsedSchedule {
     }
     if (!slot || slotIndex < 0) continue;
     const dayStart = slotIndex + 1;
-    dayColumns.forEach((_, dayIndex) => {
-      const day = dayIndex + 1;
+    dayColumns.forEach((day, dayIndex) => {
       const rawCell = row[dayStart + dayIndex] ?? '';
       if (!rawCell.trim()) return;
       String(rawCell)

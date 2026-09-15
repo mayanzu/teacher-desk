@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { TeacherProfilesProvider } from './context/TeacherProfilesContext';
 import { ToastProvider } from './context/ToastContext';
 import './styles/base.css';
@@ -15,10 +16,12 @@ import './styles/modern.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ToastProvider>
-      <TeacherProfilesProvider>
-        <App />
-      </TeacherProfilesProvider>
-    </ToastProvider>
+    <ErrorBoundary>
+      <ToastProvider>
+        <TeacherProfilesProvider>
+          <App />
+        </TeacherProfilesProvider>
+      </ToastProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );

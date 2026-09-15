@@ -61,6 +61,17 @@ describe('parseExportTable', () => {
     });
   });
 
+  it('uses the weekday parsed from the header instead of column order', () => {
+    const source = [
+      '| | 节次 | 星期二 | 星期四 |',
+      '| | 1-2 | A课 [1-2]周 1-2节 1 A楼101 2025级本科网络工程班 | B课 [1-2]周 1-2节 1 A楼101 2025级本科网络工程班 |',
+    ].join('\n');
+    const result = parseExportTable(source);
+    expect(result.courses.map((course) => course.day).sort()).toEqual([2, 4]);
+    expect(result.courses.find((course) => course.name === 'A课')?.day).toBe(2);
+    expect(result.courses.find((course) => course.name === 'B课')?.day).toBe(4);
+  });
+
   it('rejects text without weekday headers', () => {
     expect(() => parseExportTable('计算机组成原理 [1-8]周 1-2节 19 F楼404 测试班')).toThrow();
   });

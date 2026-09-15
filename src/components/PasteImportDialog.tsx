@@ -12,7 +12,7 @@ interface PasteImportDialogProps {
   onSave: (payload: ImportPayload) => void;
 }
 
-function inferSemesterStart() {
+export function inferSemesterStart() {
   const now = new Date();
   const base = now.getMonth() >= 7 ? new Date(now.getFullYear(), 7, 31) : new Date(now.getFullYear(), 1, 24);
   const day = (base.getDay() + 6) % 7;
@@ -20,9 +20,15 @@ function inferSemesterStart() {
   return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`;
 }
 
-function currentSemesterLabel() {
+export function currentSemesterLabel() {
   const year = new Date().getFullYear();
   return new Date().getMonth() >= 7 ? `${year}–${year + 1} 第一学期` : `${year - 1}–${year} 第二学期`;
+}
+
+export function clampWeeks(value: unknown, fallback = 20) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(30, Math.max(1, Math.round(parsed)));
 }
 
 export function PasteImportDialog({ open, onClose, onSave }: PasteImportDialogProps) {
@@ -156,7 +162,7 @@ export function PasteImportDialog({ open, onClose, onSave }: PasteImportDialogPr
               <label>部门 / 学院<input value={department} onChange={(event) => setDepartment(event.target.value)} placeholder="如：智慧交通现代产业学院" /></label>
               <label>学期标签<input value={semesterLabel} onChange={(event) => setSemesterLabel(event.target.value)} /></label>
               <label>第一周周一<input type="date" value={semesterStart} onChange={(event) => setSemesterStart(event.target.value)} /></label>
-              <label>总教学周<input type="number" min={1} max={30} value={totalWeeks} onChange={(event) => setTotalWeeks(Number(event.target.value) || 20)} /></label>
+              <label>总教学周<input type="number" min={1} max={30} value={totalWeeks} onChange={(event) => setTotalWeeks(clampWeeks(event.target.value))} /></label>
             </div>
             <div className="paste-summary"><span>已识别</span><b>{parsed.courses.length}</b><span>个课次 · {new Set(parsed.courses.map((course) => course.day)).size} 个上课日</span></div>
             {parsed.warnings.length > 0 && <div className="paste-warnings">以下内容需要留意：<br />{parsed.warnings.slice(0, 8).map((warning) => <span key={warning}>{warning}<br /></span>)}</div>}

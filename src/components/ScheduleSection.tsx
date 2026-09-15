@@ -2,7 +2,7 @@ import { addDays } from 'date-fns';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { DAY_NAMES } from '../data/defaults';
 import { currentWeekNumber, formatMonthDay, weekMonday } from '../lib/date';
-import { courseInstance, coursesForCell } from '../lib/schedule';
+import { courseInstance, courseTime, coursesForCell } from '../lib/schedule';
 import type { BuildingTimes, Course, ScheduleMeta, ScheduleTimes } from '../types/schedule';
 import { LessonCard } from './LessonCard';
 
@@ -91,8 +91,7 @@ export function ScheduleSection({
                     }
                     const first = cellCourses[0];
                     const instance = courseInstance(first, viewWeek, meta.semesterStart, times, buildingTimes);
-                    const [start] = (first.bld && buildingTimes[first.bld]?.[first.slot]) || times[first.slot] || ['--:--', '--:--'];
-                    const end = ((first.bld && buildingTimes[first.bld]?.[first.slot]) || times[first.slot] || ['--:--', '--:--'])[1];
+                    const [start, end] = courseTime(first, times, buildingTimes);
                     const live = now >= instance.start && now <= instance.end && viewWeek === currentWeek;
                     const past = now > instance.end && viewWeek === currentWeek;
                     return (

@@ -18,6 +18,13 @@ describe('schedule helpers', () => {
     expect(courseTime(course, DEFAULT_TIMES, BUILDING_TIMES)).toEqual(['13:30', '15:05']);
   });
 
+  it('falls back to default times for slots a building does not define', () => {
+    const evening = { ...DEFAULT_COURSES[0], bld: 'DEHK', slot: '9-10' };
+    expect(courseTime(evening, DEFAULT_TIMES, BUILDING_TIMES)).toEqual(['18:00', '19:35']);
+    const unknown = { ...DEFAULT_COURSES[0], bld: 'DEHK', slot: '13-14' };
+    expect(courseTime(unknown, DEFAULT_TIMES, BUILDING_TIMES)).toEqual(['--:--', '--:--']);
+  });
+
   it('places a course instance in the requested teaching week', () => {
     const course = DEFAULT_COURSES.find((item) => item.day === 4 && item.slot === '7-8')!;
     const instance = courseInstance(course, 3, DEFAULT_META.semesterStart, DEFAULT_TIMES, BUILDING_TIMES);

@@ -306,7 +306,13 @@ export function parseHtmlTable(html: string): ParsedSchedule {
     .map((row) => `| ${row.map((cell) => cell || '').join(' | ')} |`)
     .join('\n');
   const parsed = parseExportTable(markdown);
-  return { ...parsed, source: 'html' };
+  const documentMeta = extractMeta(documentNode.body.textContent || '');
+  return {
+    ...parsed,
+    department: parsed.department || documentMeta.department,
+    teacher: parsed.teacher || documentMeta.teacher,
+    source: 'html',
+  };
 }
 
 function slotFromPeriod(period: number): string {

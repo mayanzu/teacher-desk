@@ -72,6 +72,19 @@ describe('parseExportTable', () => {
     expect(result.courses.find((course) => course.name === 'B课')?.day).toBe(4);
   });
 
+  it('keeps department and teacher when they sit outside the pasted HTML table', () => {
+    const html = `<div>部门：智慧交通现代产业学院教师：[041103]马仲军职称：助教</div>
+      <table>
+        <tr><td>节次</td><td>星期一</td><td>星期二</td></tr>
+        <tr><td>1-2</td><td>计算机组成原理 [2-17]周 1-2节 19 F楼404（多） 2025级本科网络工程班</td><td></td></tr>
+      </table>`;
+    const result = parseScheduleText(html);
+    expect(result.source).toBe('html');
+    expect(result.teacher).toBe('[041103]马仲军');
+    expect(result.department).toBe('智慧交通现代产业学院');
+    expect(result.courses).toHaveLength(1);
+  });
+
   it('reads the real weeklesson markup with "(单)" parity and a clean teacher name', () => {
     const html = `<div id="weekly02_7" class="weeklesson"><ul>
       <li>课程名称：<b>计算机组成原理实验</b></li>

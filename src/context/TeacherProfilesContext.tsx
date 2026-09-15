@@ -57,6 +57,19 @@ function builtinProfile(): TeacherProfile {
   };
 }
 
+export function blankProfile(): TeacherProfile {
+  const now = new Date().toISOString();
+  return {
+    id: uid(),
+    meta: { teacher: '我的课表', department: '', semesterLabel: '', semesterStart: DEFAULT_META.semesterStart, totalWeeks: DEFAULT_META.totalWeeks },
+    times: { ...DEFAULT_TIMES },
+    timesByBuilding: structuredClone(BUILDING_TIMES),
+    courses: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 function writeProfiles(profiles: TeacherProfile[]): boolean {
   try {
     localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles));
@@ -195,10 +208,11 @@ export function TeacherProfilesProvider({ children }: { children: ReactNode }) {
   }, [persistProfiles, profiles]);
 
   const removeProfile = useCallback((id: string) => {
-    if (profiles.length <= 1) return;
-    const next = profiles.filter((profile) => profile.id !== id);
+    if (!profiles.some((profile) => profile.id === id)) return;
+    const remaining = profiles.filter((profile) => profile.id !== id);
+    const next = remaining.length ? remaining : [blankProfile()];
     persistProfiles(next);
-    if (activeId === id) {
+    if (activeId === id || !next.some((profile) => profile.id === activeId)) {
       writeActive(next[0].id);
       setActiveId(next[0].id);
     }

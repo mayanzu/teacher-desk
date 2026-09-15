@@ -68,7 +68,11 @@ export function TeacherManagerDialog({ open, onClose, onOpenPaste, onOpenAcademi
                   <button type="button" onClick={() => setActive(profile.id)}>{current ? '重新载入' : '切换'}</button>
                   <button type="button" onClick={() => exportProfile(profile.id)}><Download size={12} />导出</button>
                   <button type="button" onClick={() => duplicateProfile(profile.id)}><Plus size={12} />复制</button>
-                  <button type="button" onClick={() => { if (window.confirm(`确定删除「${profile.meta.teacher}」的本机档案吗？`)) removeProfile(profile.id); }}><Trash2 size={12} />删除</button>
+                  <button type="button" onClick={() => {
+                    if (!window.confirm(`确定删除「${profile.meta.teacher}」的本机档案吗？`)) return;
+                    removeProfile(profile.id);
+                    notify(profiles.length <= 1 ? '已清空课表数据，重置为空白档案' : `已删除「${profile.meta.teacher}」的本机档案`);
+                  }}><Trash2 size={12} />删除</button>
                 </div>
               </article>
             );

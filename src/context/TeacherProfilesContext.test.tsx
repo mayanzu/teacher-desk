@@ -53,6 +53,55 @@ describe('TeacherProfilesContext storage recovery', () => {
     expect(backups).toHaveLength(1);
   });
 
+  it('clears the last profile into a blank one instead of ignoring the delete', () => {
+    function DeleteProbe() {
+      const { profiles, activeProfile, removeProfile } = useTeacherProfiles();
+      return (
+        <>
+          <span>{`${profiles.length}|${activeProfile.meta.teacher}|${activeProfile.courses.length}`}</span>
+          <button type="button" onClick={() => removeProfile(profiles[0].id)}>删除</button>
+        </>
+      );
+    }
+
+    render(
+      <TeacherProfilesProvider>
+        <DeleteProbe />
+      </TeacherProfilesProvider>,
+    );
+
+    expect(screen.getByText('1|马仲军|7')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button'));
+    expect(screen.getByText('1|我的课表|0')).toBeInTheDocument();
+    const stored = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? '[]');
+    expect(stored).toHaveLength(1);
+    expect(stored[0].courses).toHaveLength(0);
+  });
+
+  it('removes one of several profiles and keeps the rest', () => {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify([validProfile('p1', '张三'), validProfile('p2', '李四')]));
+
+    function DeleteProbe() {
+      const { profiles, activeProfile, removeProfile } = useTeacherProfiles();
+      return (
+        <>
+          <span>{`${profiles.length}|${activeProfile.meta.teacher}`}</span>
+          <button type="button" onClick={() => removeProfile('p1')}>删除</button>
+        </>
+      );
+    }
+
+    render(
+      <TeacherProfilesProvider>
+        <DeleteProbe />
+      </TeacherProfilesProvider>,
+    );
+
+    expect(screen.getByText('2|张三')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button'));
+    expect(screen.getByText('1|李四')).toBeInTheDocument();
+  });
+
   it('clamps out-of-range and empty payload metadata instead of throwing', () => {
     function SaveProbe() {
       const { upsertProfile, activeProfile } = useTeacherProfiles();

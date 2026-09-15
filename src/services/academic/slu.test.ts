@@ -11,7 +11,7 @@ describe('buildSluImportPayload', () => {
     </table>`;
     const payload = buildSluImportPayload({
       status: 'success',
-      html,
+      htmls: [html],
       teacher: '孙佳悦',
       semesterLabel: '2026-2027学年第一学期',
     });

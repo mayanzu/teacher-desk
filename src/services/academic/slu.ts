@@ -1,7 +1,7 @@
 import { format } from 'date-fns';
 import { z } from 'zod';
 import { BUILDING_TIMES, DEFAULT_META, DEFAULT_TIMES } from '../../data/defaults';
-import { parseHtmlTable } from '../../lib/parser';
+import { parseScheduleHtml } from '../../lib/parser';
 import type { ImportPayload } from '../../types/schedule';
 
 export const SLU_ORIGIN = 'https://jwxt.slu.edu.cn:4060';
@@ -17,7 +17,7 @@ export const sluStatusSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('waiting'), message: z.string().optional() }),
   z.object({
     status: z.literal('success'),
-    html: z.string().min(20),
+    htmls: z.array(z.string().min(20)).min(1),
     teacher: z.string().optional().default(''),
     semesterLabel: z.string().optional().default(''),
   }),
@@ -40,15 +40,28 @@ function inferSemesterStart(html: string): string {
 }
 
 export function buildSluImportPayload(result: Extract<SluStatusResult, { status: 'success' }>): ImportPayload {
-  const parsed = parseHtmlTable(result.html);
-  const documentNode = new DOMParser().parseFromString(result.html, 'text/html');
+  const unique = new Map<string, ReturnType<typeof parseScheduleHtml>['courses'][number]>();
+  let maxWeek = 0;
+  result.htmls.forEach((html) => {
+    const parsed = parseScheduleHtml(html);
+    maxWeek = Math.max(maxWeek, parsed.maxWeek || 0);
+    parsed.courses.forEach((course) => {
+      const key = [course.day, course.slot, course.name, course.weeks, course.parity, course.room, course.clazz, course.count].join('|');
+      if (!unique.has(key)) unique.set(key, course);
+    });
+  });
+  const courses = [...unique.values()];
+  if (!courses.length) throw new Error('教务课表中没有可识别的课程');
+  const firstHtml = result.htmls[0];
+  const parsed = { ...parseScheduleHtml(firstHtml), courses, maxWeek };
+  const documentNode = new DOMParser().parseFromString(firstHtml, 'text/html');
   const title = documentNode.body.textContent?.match(/\d{4}-\d{4}学年(?:第[一二]学期)?教学安排表/)?.[0] || '';
   return {
     meta: {
       teacher: result.teacher || parsed.teacher || '我的课表',
       department: parsed.department || '',
       semesterLabel: result.semesterLabel || title || DEFAULT_META.semesterLabel,
-      semesterStart: inferSemesterStart(result.html),
+      semesterStart: inferSemesterStart(firstHtml),
       totalWeeks: Math.max(20, parsed.maxWeek || 0),
     },
     times: DEFAULT_TIMES,

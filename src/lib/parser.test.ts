@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SAMPLE_TABLE } from '../data/sample';
-import { parseExportTable, parseHtmlTable, parseScheduleText } from './parser';
+import { parseExportTable, parseHtmlTable, parseKingoSoftScheduleHtml, parseScheduleText } from './parser';
 
 describe('parseExportTable', () => {
   it('parses the教务处 Markdown table', () => {
@@ -41,7 +41,24 @@ describe('parseExportTable', () => {
     expect(result.source).toBe('html');
     expect(result.courses).toHaveLength(2);
     expect(result.courses[0].slot).toBe('1-2');
+    expect(result.courses[0].room).toBe('D楼208(多)');
+    expect(result.courses[0].clazz).toBe('2025级本科网络工程班');
     expect(result.courses[1].day).toBe(2);
+  });
+
+  it('parses the hidden weeklesson details used by the real schedule page', () => {
+    const html = `<div id="weekly02_1" class="weeklesson"><ul>
+      <li>课程名称：<b>计算机组成原理</b></li>
+      <li>上课时间：<b>[2-17周] 二[1-2节]</b></li>
+      <li>上课地点：<b>F楼404（多）</b></li>
+      <li>合班信息：<b>2025级本科网络工程班</b></li>
+    </ul></div>`;
+    const result = parseKingoSoftScheduleHtml(html);
+    expect(result.source).toBe('kingosoft');
+    expect(result.courses).toHaveLength(1);
+    expect(result.courses[0]).toMatchObject({
+      name: '计算机组成原理', day: 2, slot: '1-2', weeks: '2-17', room: 'F楼404（多）', clazz: '2025级本科网络工程班',
+    });
   });
 
   it('rejects text without weekday headers', () => {

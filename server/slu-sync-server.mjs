@@ -129,14 +129,34 @@ async function completeLogin(session, username) {
   const homeResponse = await request(session, homeUrl, { method: 'GET', headers: { Referer: JWXT_ORIGIN + '/ahsljw/cas/login.action' } });
   const homeText = await homeResponse.text();
   const pageInfo = extractPageInfo(homeText);
-  const scheduleUrl = new URL('/ahsljw/frame/desk/showLessonScheduleInfosV14.action', JWXT_ORIGIN);
-  scheduleUrl.searchParams.set('xn', String(pageInfo.year));
-  scheduleUrl.searchParams.set('xq', String(pageInfo.term));
-  scheduleUrl.searchParams.set('jxz', '3');
-  const scheduleResponse = await request(session, scheduleUrl.toString(), { method: 'GET', headers: { Referer: homeUrl } });
-  const html = await scheduleResponse.text();
-  if (!/<table[\s>]/i.test(html)) throw new Error('教务系统没有返回课表表格');
-  return { html, teacher: pageInfo.teacher, semesterLabel: pageInfo.semesterLabel };
+  const uniqueDetails = new Map();
+  let fallbackTable = '';
+  for (let batchStart = 1; batchStart <= 30; batchStart += 5) {
+    const batch = await Promise.all(Array.from({ length: Math.min(5, 30 - batchStart + 1) }, async (_, offset) => {
+      const week = batchStart + offset;
+      const scheduleUrl = new URL('/ahsljw/frame/desk/showLessonScheduleInfosV14.action', JWXT_ORIGIN);
+      scheduleUrl.searchParams.set('xn', String(pageInfo.year));
+      scheduleUrl.searchParams.set('xq', String(pageInfo.term));
+      scheduleUrl.searchParams.set('jxz', String(week));
+      const response = await request(session, scheduleUrl.toString(), { method: 'GET', headers: { Referer: homeUrl } });
+      return response.text();
+    }));
+    for (const html of batch) {
+      const blocks = html.match(/<div(?=[^>]*id="weekly0\d+_\d+")(?=[^>]*class="[^"]*weeklesson)[^>]*>[\s\S]*?<\/ul>\s*<\/div>/gi) || [];
+      for (const block of blocks) {
+        const normalized = block.replace(/\s+/g, ' ').trim();
+        if (!uniqueDetails.has(normalized)) uniqueDetails.set(normalized, block);
+      }
+      if (!fallbackTable && /\[[^\]]+\]周/.test(html)) {
+        fallbackTable = html.match(/<table[\s\S]*?<\/table>/i)?.[0] || '';
+      }
+    }
+  }
+  const htmls = uniqueDetails.size
+    ? [`<div>${[...uniqueDetails.values()].join('')}</div>`]
+    : fallbackTable ? [fallbackTable] : [];
+  if (!htmls.length) throw new Error('本学期没有查询到课程，请确认当前账号是任课教师且课表已经发布');
+  return { htmls, teacher: pageInfo.teacher, semesterLabel: pageInfo.semesterLabel };
 }
 
 async function pollSession(session) {

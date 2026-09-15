@@ -47,7 +47,7 @@ export interface ParsedCourse extends Course {
 }
 
 export interface ParsedSchedule {
-  source?: 'structured' | 'plain' | 'html';
+  source?: 'structured' | 'plain' | 'html' | 'kingosoft';
   teacher: string;
   department: string;
   courses: ParsedCourse[];

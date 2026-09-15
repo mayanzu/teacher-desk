@@ -94,7 +94,7 @@ function parseCoursePart(
   const count = Number(match[6]) || null;
   let rest = cleanCell(match[7]);
   let clazz = '';
-  const classMatch = rest.match(/((?:20\d{2}级|\d{4}级|[A-Za-z\u4e00-\u9fa5]{1,14}\d{2,4}[\u4e00-\u9fa5A-Za-z\d（）()]*班))$/);
+  const classMatch = rest.match(/([^\s]+班)$/);
   if (classMatch) {
     clazz = classMatch[1];
     rest = rest.slice(0, classMatch.index).trim();
@@ -294,6 +294,80 @@ export function parseHtmlTable(html: string): ParsedSchedule {
     .join('\n');
   const parsed = parseExportTable(markdown);
   return { ...parsed, source: 'html' };
+}
+
+function slotFromPeriod(period: number): string {
+  const start = period % 2 === 1 ? period : period - 1;
+  return `${start}-${start + 1}`;
+}
+
+export function parseKingoSoftScheduleHtml(html: string): ParsedSchedule {
+  const documentNode = new DOMParser().parseFromString(html, 'text/html');
+  const nodes = [...documentNode.querySelectorAll<HTMLElement>('.weeklesson')];
+  if (!nodes.length) throw new Error('没有找到金智教务课程详情区块');
+  const warnings: string[] = [];
+  const courses: ParsedCourse[] = [];
+  const seen = new Set<string>();
+
+  nodes.forEach((node, index) => {
+    const fields = new Map<string, string>();
+    node.querySelectorAll('li').forEach((item) => {
+      const text = cleanCell(item.textContent || '');
+      const separator = text.search(/[：:]/);
+      if (separator < 0) return;
+      fields.set(text.slice(0, separator).trim(), text.slice(separator + 1).trim());
+    });
+    const name = fields.get('课程名称') || '';
+    const timeText = fields.get('上课时间') || '';
+    const idMatch = node.id.match(/^weekly0(\d+)_(\d+)$/);
+    let day = idMatch ? Number(idMatch[1]) : 0;
+    let slot = idMatch ? slotFromPeriod(Number(idMatch[2])) : '';
+    const timeMatch = timeText.match(/([一二三四五六日天])\[(\d+)\s*[-—–~至]\s*(\d+)\s*节\]/);
+    if (timeMatch) {
+      day = DAY_NUM[timeMatch[1]] || day;
+      slot = `${Number(timeMatch[2])}-${Number(timeMatch[3])}`;
+    }
+    const weeks = timeText.match(/\[([^\]]+?)周\]/)?.[1]?.replace(/\s+/g, '') || '';
+    if (!name || !day || !slot || !weeks) {
+      warnings.push(`第 ${index + 1} 个课程详情缺少必要字段`);
+      return;
+    }
+    const parity: WeekParity = timeText.includes('单周') ? 'odd' : timeText.includes('双周') ? 'even' : null;
+    const room = fields.get('上课地点') || '';
+    const clazz = fields.get('合班信息') || '';
+    const course: ParsedCourse = {
+      name: name.slice(0, 60),
+      day,
+      slot,
+      weeks,
+      parity,
+      room: room.slice(0, 50),
+      bld: inferBuildingFromRoom(room),
+      clazz: clazz.slice(0, 60),
+      count: null,
+    };
+    const key = [course.day, course.slot, course.name, course.weeks, course.parity, course.room, course.clazz].join('|');
+    if (!seen.has(key)) {
+      seen.add(key);
+      courses.push(course);
+    }
+  });
+
+  if (!courses.length) throw new Error('课程详情存在，但没有解析出完整课程');
+  const meta = extractMeta(html);
+  const maxWeek = courses.reduce((max, course) => Math.max(max, maxWeekIn(course.weeks)), 0);
+  return { ...meta, courses, warnings, maxWeek, source: 'kingosoft' };
+}
+
+export function parseScheduleHtml(html: string): ParsedSchedule {
+  if (/class=["'][^"']*weeklesson/i.test(html) || /id=["']weekly0/i.test(html)) {
+    try {
+      return parseKingoSoftScheduleHtml(html);
+    } catch {
+      // Fall back to the visible table parser.
+    }
+  }
+  return parseHtmlTable(html);
 }
 
 export function parseScheduleText(text: string): ParsedSchedule {

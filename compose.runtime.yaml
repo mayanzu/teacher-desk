@@ -8,5 +8,19 @@ services:
     image: teacher-timetable:latest
     container_name: timetable
     restart: unless-stopped
+    depends_on:
+      - academic-sync
     ports:
       - "8088:80"
+
+  academic-sync:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+    image: teacher-timetable-sync:latest
+    container_name: teacher-timetable-sync
+    restart: unless-stopped
+    expose:
+      - "8787"

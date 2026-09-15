@@ -177,6 +177,7 @@ export default function App() {
         open={academicSyncOpen}
         status={academicSync.status}
         message={academicSync.message}
+        qrCodeValue={academicSync.qrCodeValue}
         onStart={academicSync.start}
         onClose={() => { setAcademicSyncOpen(false); academicSync.reset(); }}
       />

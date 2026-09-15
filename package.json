@@ -14,11 +14,13 @@
     "typecheck": "tsc -b --pretty false",
     "format": "prettier --write .",
     "lint:fix": "eslint . --fix",
-    "check:userscript": "node --check public/slu-jwxt-sync.user.js"
+    "dev:api": "node server/slu-sync-server.mjs",
+    "check:server": "node --check server/slu-sync-server.mjs"
   },
   "dependencies": {
     "date-fns": "^4.4.0",
     "lucide-react": "^1.46.0",
+    "qrcode.react": "^4.2.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "tesseract.js": "^7.0.0",

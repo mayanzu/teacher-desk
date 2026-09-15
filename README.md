@@ -62,6 +62,12 @@ docker compose up -d --build
 
 默认映射到宿主机 `8088` 端口。
 
+低功耗软路由建议在本机执行 `npm run build`，再把 `dist` 交给仅含 Nginx 的运行时镜像：
+
+```bash
+docker compose -f compose.runtime.yaml up -d --build
+```
+
 软路由或国内环境可以复制环境变量示例并使用镜像代理：
 
 ```bash

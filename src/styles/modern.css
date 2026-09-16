@@ -1,3 +1,8 @@
+/* ==========================================================================
+   结构修复层（非主题）
+   只做美漫主题不关心的布局与可用性修正：原生 dialog、禁用态、图标尺寸、
+   行内布局。任何颜色 / 边框 / 阴影 / 旋转等主题规则一律归 comic.css。
+   ========================================================================== */
 #root {
   min-height: 100%;
 }
@@ -11,14 +16,11 @@ button svg {
   height: 16px;
 }
 
-.nav-cta {
-  border: 0;
-}
-
 .teacher-switcher svg:last-of-type {
   flex: none;
 }
 
+/* 课程详情弹层行布局 */
 .sheet-row strong {
   display: block;
   font-size: 14px;
@@ -38,6 +40,7 @@ button svg {
   height: 13px;
 }
 
+/* 弹层 / 抽屉头部的关闭按钮：继承当前文字色，悬停反白 */
 .kapp-head .icon-button,
 .sheet-head .icon-button,
 .drawer-head .icon-button {
@@ -49,7 +52,7 @@ button svg {
 .sheet-head .icon-button:hover,
 .drawer-head .icon-button:hover {
   color: var(--accent-ink);
-  background: var(--accent);
+  background: var(--accent) !important;
 }
 
 .kopt {
@@ -67,152 +70,52 @@ button svg {
   gap: 4px;
 }
 
+/* 禁用态（不含任何主题色，仅透明度与光标） */
+button:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+
+/* 表单焦点：主题红描边，与漫画粗描边体系一致 */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
 @media (max-width: 600px) {
   .sheet-row-meta {
     font-size: 11px;
   }
 }
 
-/* UI review: quieter sticker surfaces, readable type and consistent controls. */
-:root { --accent: #c33f35; --accent-fill: #c33f35; --accent-strong: #a5322a; --fg-3: #625c66; }
-body { min-height: 100dvh; background-size: 18px 18px, 100% 100%; }
-body::after { opacity: .15; }
-main { overflow: visible; }
-.product-nav-inner, .hero, .section, .footer { max-width: 1380px; }
-.product-nav-inner { flex-wrap: wrap; }
-.product-name { transform: none; box-shadow: 2px 2px 0 #c33f35; white-space: nowrap; }
-.product-links a { border-color: transparent; font-weight: 600; }
-.product-meta { flex-wrap: wrap; }
-.product-meta .icon-button, .icon-button { min-width: 44px; min-height: 44px; }
-.product-nav :focus-visible { outline-color: #ffd84f; }
-button:disabled { opacity: .35; cursor: not-allowed; }
-.segmented .icon-button:disabled:hover { color: var(--fg); background: transparent !important; }
-.hero { gap: 28px; padding-top: 28px; align-items: center; }
-.hero-copy { min-width: 0; text-align: left; }
-.eyebrow { display: block; width: fit-content; max-width: 100%; padding: 0; margin-bottom: 12px; background: none; color: var(--fg-2); border: 0; box-shadow: none; transform: none; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
-h1 { font-size: clamp(40px, 4.5vw, 64px); line-height: 1.15; letter-spacing: -.04em; font-style: normal; text-shadow: 2px 2px 0 #ffd84f; }
-.hero-description { margin-top: 10px; font-size: 14px; font-weight: 500; }
-.teacher-switcher { min-height: 56px; margin-top: 18px; border-width: 2px; box-shadow: 2px 2px 0 var(--fg); }
-.teacher-switcher .ts-label { font-size: 12px; letter-spacing: 0; line-height: 1.5; }
-.teacher-switcher .ts-name { font-size: 15px; line-height: 1.5; }
-.teacher-switcher .ts-action { font-size: 12px; }
-.paste-cta, .paste-secondary { min-height: 44px; font-size: 14px; font-weight: 650; border-width: 2px; box-shadow: 2px 2px 0 var(--fg); }
-.paste-cta { background: var(--accent); }
-.stage { min-height: 0; border-width: 2px; border-radius: 18px; box-shadow: 4px 4px 0 var(--fg); }
-.stage::before, .stage::after, .next-card::after, .panel-card::before { display: none; }
-.stage-inner { grid-template-columns: minmax(0, 1fr) 150px; padding: 18px; gap: 14px; }
-.glass { background-image: none; }
-.glass::before, .glass::after { display: none; }
-.next-card { gap: 14px; padding: 20px; border-width: 2px; box-shadow: 2px 2px 0 var(--fg); background: #fff0a6 !important; }
-.nb-icon { width: 42px; height: 42px; border-width: 2px; box-shadow: none; background: var(--fg); }
-.nb-body { flex: 1 1 190px; }
-.nb-name { font-size: clamp(20px, 2vw, 27px); line-height: 1.4; overflow-wrap: anywhere; }
-.nb-label, .cd-label, .mini-k { font-size: 12px; letter-spacing: 0; font-weight: 600; }
-.nb-meta { font-size: 13px; line-height: 1.6; }
-.nb-count { width: 100%; margin-left: 0; padding: 14px 0 0; border-left: 0; border-top: 1px solid #c7b56c; text-align: left; }
-.cd-value { font-size: 30px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.mini-stack { gap: 14px; }
-.mini-card { min-height: 90px; padding: 14px; border-width: 1px; box-shadow: none; background: #f1eee4 !important; }
-.mini-card:nth-child(2) { background: #f1eee4 !important; }
-.mini-v { font-size: 25px; font-variant-numeric: tabular-nums; }
-.mini-s { font-size: 12px; font-weight: 500; }
-.section { padding-top: 32px; }
-.section-heading h2 { font-size: 27px; letter-spacing: -.02em; text-shadow: none; line-height: 1.4; }
-.section-heading .sub { font-size: 13px; font-weight: 500; }
-.segmented { border-width: 2px; box-shadow: 2px 2px 0 var(--fg); }
-.week-readout { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.status-pill { min-height: 44px; font-size: 13px; box-shadow: none; }
-.panel-card { padding: 14px; border-width: 2px; border-radius: 18px; box-shadow: 4px 4px 0 var(--fg); }
-.gridwrap { scrollbar-width: thin; padding: 8px 4px 12px; }
-.grid { min-width: 900px; border-spacing: 8px; }
-.grid .cell-time { width: 82px; z-index: 2; }
-.cell-time { border-width: 1px; box-shadow: none; }
-.cell-time b { font-size: 12px; }
-.cell-time span { font-size: 12px; }
-.cell-day { background: #eee8da !important; color: var(--fg); border: 1px solid #d3c9b6; box-shadow: none; }
-.cell-day b { font-size: 14px; }
-.cell-day span { color: var(--fg-2); font-size: 12px; opacity: 1; font-weight: 500; }
-.cell-day.is-today { background: var(--accent) !important; color: #fff; border-color: var(--accent); }
-.cell-day.is-today span { color: #fff; }
-.gc { border: 1px dashed #d6cebd; height: 136px; }
-.gc.is-today-col { background: #fff4c7; border-color: #c5a54f; }
-.grid .lesson { border-width: 2px; box-shadow: 2px 2px 0 #b5aa94; transform: none !important; padding: 12px; min-height: 136px; gap: 6px; }
-.lesson::before, .lesson::after { display: none; }
-.lesson.is-past { opacity: 1; filter: saturate(.55); }
-.lesson:hover, .lesson:focus-visible, .lesson.is-hover { transform: translateY(-2px) !important; box-shadow: 3px 4px 0 var(--fg) !important; filter: none !important; }
-.lesson:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
-.lesson:hover .l-name, .lesson:focus-visible .l-name { animation: none; background: none; }
-.lesson:active { transform: scale(.98) !important; }
-.l-name { font-size: 15px; line-height: 1.5; letter-spacing: 0; overflow-wrap: anywhere; }
-.l-time { font-size: 11px; font-variant-numeric: tabular-nums; }
-.l-line, .l-line.is-muted { font-size: 12px; line-height: 1.5; font-weight: 500; }
-.l-line span { white-space: normal; overflow-wrap: anywhere; }
-.lesson .l-live, .lesson .lesson-more { position: static; align-self: flex-start; font-size: 11px; box-shadow: none; }
-.grid-hint { display: block; font-size: 12px; font-weight: 500; }
-.schedule-empty { padding: 18px; margin: 4px 4px 10px; background: #f7f1e3; border-radius: 10px; border-left: 3px solid var(--accent); }
-.schedule-empty strong { font-size: 16px; }
-.schedule-empty p { margin-top: 5px; color: var(--fg-2); font-size: 13px; line-height: 1.7; }
-.footer { border-top: 1px solid #c8bda6; }
-.footer p { font-weight: 400; line-height: 1.8; }
-.drawer, .sheet, .kapp { border-width: 2px !important; box-shadow: 4px 4px 0 var(--fg) !important; max-height: 94dvh; }
-.drawer { max-height: 100dvh; border-radius: 18px 0 0 18px !important; }
-.sheet { overflow-y: auto; }
-.kapp-head h2, .sheet-head h2, .drawer-head h2 { font-size: 22px; line-height: 1.4; }
-.button, .text-link { min-height: 44px; font-size: 14px; font-weight: 650 !important; box-shadow: 2px 2px 0 var(--fg) !important; }
-.button.primary { background: var(--accent) !important; }
-.teacher-card-actions button { min-height: 40px; font-size: 12px; }
-.teacher-card-meta, .field-note, .kopt { font-size: 13px; line-height: 1.7; }
-input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-@media (max-width: 1100px) {
-  .ns-date, .product-links { display: none; }
-  .hero { grid-template-columns: minmax(230px, .8fr) minmax(0, 1.2fr); }
-  .stage-inner { grid-template-columns: 1fr; }
-  .mini-stack { grid-template-columns: 1fr 1fr; }
-}
-@media (max-width: 760px) {
-  .hero { grid-template-columns: 1fr; gap: 20px; }
-  .hero-copy { max-width: none; }
-  .teacher-switcher { max-width: none; }
-  .product-nav-inner { padding: 8px 12px; }
-  .product-meta { gap: 6px; }
-  .product-meta .icon-button { width: 44px !important; height: 44px !important; }
-  .nav-pill { display: none; }
-  .nav-cta { min-height: 44px; font-size: 12px; box-shadow: none; }
-  .hero, .section { padding-left: 16px; padding-right: 16px; }
-  .hero { padding-top: 22px; }
-  .section-heading { gap: 14px; }
-  .week-nav { width: 100%; justify-content: space-between; }
-  .segmented { flex: 1; }
-  .stage-inner { padding: 14px; }
-  .next-card { padding: 16px; }
-  .nb-body { flex-basis: 180px; }
-  .panel-card { padding: 8px; }
-  .grid { min-width: 860px; border-spacing: 8px; }
-  .grid .cell-time { width: 72px; }
-  .gridwrap::-webkit-scrollbar { display: block; height: 8px; }
-  .kmeta input, .ktable textarea, .paste-textarea { font-size: 16px; }
-}
-@media (max-width: 600px) {
-  body { padding-bottom: env(safe-area-inset-bottom); }
-  h1 { font-size: 44px; }
-  .eyebrow { font-size: 13px; }
-  .hero-description { font-size: 14px; }
-  .paste-cta, .paste-secondary { font-size: 14px; min-height: 44px; }
-  .nb-name { font-size: 22px; }
-  .nb-label, .cd-label, .mini-k, .mini-s { font-size: 12px; }
-  .nb-meta { font-size: 13px; }
-  .l-name { font-size: 15px; }
-  .l-time { font-size: 11px; }
-  .l-line, .l-line.is-muted { font-size: 12px; }
-  .grid-hint { font-size: 12px; text-align: left; }
-  .sheet-row-meta { font-size: 13px; }
-  .footer { margin: 0 16px; }
-}
+/* 减少动态时，课程卡悬停不再位移 */
 @media (prefers-reduced-motion: reduce) {
-  .lesson:hover, .lesson:focus-visible { transform: none !important; }
+  .lesson:hover,
+  .lesson:focus-visible {
+    transform: none !important;
+  }
 }
-/* Native modal handles focus containment, Escape and focus restoration. */
-dialog.drawer { margin: 0 0 0 auto; padding: 0; height: 100dvh; max-height: 100dvh; }
-dialog.drawer:not([open]) { display: none; }
-dialog.drawer[open] { display: flex; visibility: visible; transform: none; }
-dialog.drawer::backdrop { background: rgba(28, 28, 34, .45); backdrop-filter: blur(3px); }
+
+/* 原生 dialog 抽屉：焦点圈定、Esc 关闭与焦点还原由浏览器负责 */
+dialog.drawer {
+  margin: 0 0 0 auto;
+  padding: 0;
+  height: 100dvh;
+  max-height: 100dvh;
+}
+
+dialog.drawer:not([open]) {
+  display: none;
+}
+
+dialog.drawer[open] {
+  display: flex;
+  visibility: visible;
+  transform: none;
+}
+
+dialog.drawer::backdrop {
+  background: rgba(21, 21, 27, .52);
+}

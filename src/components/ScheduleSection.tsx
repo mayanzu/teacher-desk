@@ -72,7 +72,7 @@ export function ScheduleSection({
         </div>
       </div>
 
-      <div className="panel-card glass reveal is-in">
+      <div className="panel-card reveal is-in">
         {weekCount === 0 && <div className="schedule-empty" role="status"><strong>{courses.length ? '这一周没有课程安排' : '你的课表，从这里开始'}</strong><p>{courses.length ? '可切换周次查看其他教学安排。' : '使用上方扫码同步或粘贴导入，添加你的第一份课表。'}</p></div>}
         <div className="gridwrap" tabIndex={0} role="region" aria-label="每周课表，可左右滚动" aria-describedby="gridHint">
           <table className="grid">

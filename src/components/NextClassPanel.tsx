@@ -16,7 +16,7 @@ export function NextClassPanel({ next, now, todayCount, weekCount, weekRange }: 
   return (
     <div className="stage reveal is-in" aria-label="下一节课概览">
       <div className="stage-inner">
-        <div className="next-card glass">
+        <div className="next-card">
           <span className="nb-icon" aria-hidden="true"><Clock3 /></span>
           <div className="nb-body">
             <p className="nb-label">下一节课</p>
@@ -44,12 +44,12 @@ export function NextClassPanel({ next, now, todayCount, weekCount, weekRange }: 
           </div>
         </div>
         <div className="mini-stack">
-          <div className="mini-card glass">
+          <div className="mini-card">
             <p className="mini-k">今日</p>
             <p className="mini-v">{todayCount} 门</p>
             <p className="mini-s">{joinMeta([DAY_NAMES[now.getDay() || 7], todayCount ? '好好上课' : '轻松一天'])}</p>
           </div>
-          <div className="mini-card glass">
+          <div className="mini-card">
             <p className="mini-k">所选周</p>
             <p className="mini-v">{weekCount} 门次</p>
             <p className="mini-s">{weekRange}</p>

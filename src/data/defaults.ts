@@ -1,8 +1,8 @@
-import type { BuildingTimes, Course, ScheduleMeta, ScheduleTimes } from '../types/schedule';
+import type { BuildingTimes, ScheduleMeta, ScheduleTimes } from '../types/schedule';
 
 export const DEFAULT_META: ScheduleMeta = {
-  teacher: '马仲军',
-  department: '智慧交通现代产业学院',
+  teacher: '我的课表',
+  department: '',
   semesterLabel: '2026–2027 第一学期',
   semesterStart: '2026-08-31',
   totalWeeks: 20,
@@ -43,16 +43,6 @@ export const BUILDING_TIMES: BuildingTimes = {
     '7-8': ['15:20', '16:55'],
   },
 };
-
-export const DEFAULT_COURSES: Course[] = [
-  { name: '计算机组成原理', day: 2, slot: '1-2', weeks: '2-17', parity: null, room: 'F楼404（多）', bld: 'BCFG', clazz: '2025级本科网络工程班', count: 19 },
-  { name: '计算机程序设计及应用', day: 4, slot: '1-2', weeks: '9-12', parity: null, room: 'F楼302交通仿真实验室', bld: 'BCFG', clazz: '2025级本科机械电子工程班', count: 53 },
-  { name: '计算机程序设计及应用', day: 1, slot: '3-4', weeks: '2-5,7,9-17', parity: null, room: 'F楼302交通仿真实验室', bld: 'BCFG', clazz: '2025级本科机械电子工程班', count: 53 },
-  { name: '计算机程序设计及应用', day: 5, slot: '3-4', weeks: '14-15,17', parity: null, room: 'F楼302交通仿真实验室', bld: 'BCFG', clazz: '2025级本科车辆工程班', count: 33 },
-  { name: '计算机组成原理', day: 4, slot: '5-6', weeks: '2-4,6', parity: null, room: 'D楼208(多)', bld: 'DEHK', clazz: '2025级本科网络工程班', count: 19 },
-  { name: '计算机组成原理实验', day: 2, slot: '7-8', weeks: '7-17', parity: 'odd', room: 'D楼408计算机组成结构实验室', bld: 'DEHK', clazz: '2025级本科网络工程班', count: 19 },
-  { name: '计算机程序设计及应用', day: 4, slot: '7-8', weeks: '2-4,6-17', parity: null, room: 'F楼302交通仿真实验室', bld: 'BCFG', clazz: '2025级本科车辆工程班', count: 33 },
-];
 
 export const DAY_NAMES = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 export const BUILDING_NAMES: Record<string, string> = {

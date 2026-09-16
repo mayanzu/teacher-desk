@@ -190,6 +190,7 @@ export default function App() {
         onClose={() => setOnboardingClosed(true)}
         onAcademicSync={() => { setOnboardingClosed(true); setAcademicSyncOpen(true); academicSync.start(); }}
         onPaste={() => { setOnboardingClosed(true); setPasteOpen(true); }}
+        onPhoto={() => { setOnboardingClosed(true); setPhotoOpen(true); }}
       />
       <AcademicSyncDialog
         open={academicSyncOpen}

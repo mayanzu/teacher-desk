@@ -158,8 +158,8 @@ export function PasteImportDialog({ open, onClose, onSave }: PasteImportDialogPr
         {step === 2 && parsed && (
           <section className="kapp-step">
             <div className="kmeta paste-meta">
-              <label>教师姓名<input value={teacher} onChange={(event) => setTeacher(event.target.value)} placeholder="如：马仲军" /></label>
-              <label>部门 / 学院<input value={department} onChange={(event) => setDepartment(event.target.value)} placeholder="如：智慧交通现代产业学院" /></label>
+              <label>教师姓名<input value={teacher} onChange={(event) => setTeacher(event.target.value)} placeholder="如：张老师" /></label>
+              <label>部门 / 学院<input value={department} onChange={(event) => setDepartment(event.target.value)} placeholder="如：信息工程学院" /></label>
               <label>学期标签<input value={semesterLabel} onChange={(event) => setSemesterLabel(event.target.value)} /></label>
               <label>第一周周一<input type="date" value={semesterStart} onChange={(event) => setSemesterStart(event.target.value)} /></label>
               <label>总教学周<input type="number" min={1} max={30} value={totalWeeks} onChange={(event) => setTotalWeeks(clampWeeks(event.target.value))} /></label>

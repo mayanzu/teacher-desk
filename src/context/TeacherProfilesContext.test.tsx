@@ -15,7 +15,7 @@ function validProfile(id: string, teacher: string, courses: unknown[] = []) {
   };
 }
 
-const sampleCourse = { name: '计算机组成原理', day: 2, slot: '1-2', weeks: '2-17', parity: null, room: 'F楼404', clazz: '2025级' };
+const sampleCourse = { name: '示例课程A', day: 2, slot: '1-2', weeks: '2-17', parity: null, room: 'A楼101', clazz: '示例一班' };
 
 function Probe() {
   const { profiles, activeProfile } = useTeacherProfiles();
@@ -73,7 +73,7 @@ describe('TeacherProfilesContext storage recovery', () => {
           <span>{`${profiles.length}|${activeProfile.meta.teacher}|${activeProfile.courses.length}`}</span>
           <button
             type="button"
-            onClick={() => upsertProfile({ meta: { teacher: '马仲军', semesterStart: '2026-08-31', totalWeeks: 20 }, courses: [sampleCourse] })}
+            onClick={() => upsertProfile({ meta: { teacher: '示例教师', semesterStart: '2026-08-31', totalWeeks: 20 }, courses: [sampleCourse] })}
           >
             导入
           </button>
@@ -89,11 +89,11 @@ describe('TeacherProfilesContext storage recovery', () => {
 
     expect(screen.getByText('1|我的课表|0')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button'));
-    expect(screen.getByText('1|马仲军|1')).toBeInTheDocument();
+    expect(screen.getByText('1|示例教师|1')).toBeInTheDocument();
   });
 
   it('clears the last profile into a blank one instead of ignoring the delete', () => {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify([validProfile('p1', '马仲军', [sampleCourse])]));
+    localStorage.setItem(PROFILE_KEY, JSON.stringify([validProfile('p1', '示例教师', [sampleCourse])]));
 
     function DeleteProbe() {
       const { profiles, activeProfile, removeProfile } = useTeacherProfiles();
@@ -111,7 +111,7 @@ describe('TeacherProfilesContext storage recovery', () => {
       </TeacherProfilesProvider>,
     );
 
-    expect(screen.getByText('1|马仲军|1')).toBeInTheDocument();
+    expect(screen.getByText('1|示例教师|1')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button'));
     expect(screen.getByText('1|我的课表|0')).toBeInTheDocument();
     const stored = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? '[]');

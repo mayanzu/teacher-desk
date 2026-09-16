@@ -44,6 +44,7 @@ function isSeparator(row: string[]): boolean {
 
 function slotFromText(value: string): string {
   const text = cleanCell(value).replace(/\s+/g, '');
+  if (/^\d{1,2}:\d{2}/.test(text)) return '';
   const chinese = text.match(/^[一二三四五六]$/);
   if (chinese) return SLOT_MAP[chinese[0]];
   const single = text.match(/^(?:第)?(\d{1,2})(?:\D|$)/);
@@ -90,15 +91,21 @@ function parseCoursePart(
   const text = cleanCell(rawPart);
   if (!text || /^[-—–,，;；]+$/.test(text)) return null;
   const match = text.match(
-    /^(.*?)\s*[［[]([^］\]]+)[］\]]\s*周\s*(?:(单周|双周)\s*)?第?\s*(\d+)\s*[-—–~至]\s*(\d+)\s*节\s*(?:(\d+)\s+)?(.*)$/,
+    /^(.*?)\s*[［[]\s*([^］\]]+?)\s*[］\]]\s*周?\s*[（(]?\s*(单周|双周|单|双)?\s*[）)]?\s*第?\s*(\d+)\s*[-—–~至]\s*(\d+)\s*节\s*(?:(\d+)\s+)?(.*)$/,
   );
   if (!match) {
     warnings.push(`${context}：无法识别「${text.slice(0, 46)}${text.length > 46 ? '…' : ''}」`);
     return null;
   }
   const name = cleanCell(match[1]);
-  const weeks = cleanCell(match[2]).replace(/[—–~至]/g, '-').replace(/\s+/g, '');
-  const parity: WeekParity = match[3] === '单周' ? 'odd' : match[3] === '双周' ? 'even' : null;
+  const weeks = cleanCell(match[2])
+    .replace(/[第周]/g, '')
+    .replace(/[—–~至]/g, '-')
+    .replace(/[，、;；]/g, ',')
+    .replace(/\s+/g, '')
+    .replace(/^,+|,+$/g, '');
+  const parityText = match[3] || '';
+  const parity: WeekParity = /单/.test(parityText) ? 'odd' : /双/.test(parityText) ? 'even' : null;
   const slotText = `${match[4]}-${match[5]}`;
   const count = Number(match[6]) || null;
   let rest = cleanCell(match[7]);
@@ -107,6 +114,13 @@ function parseCoursePart(
   if (classMatch) {
     clazz = classMatch[1];
     rest = rest.slice(0, classMatch.index).trim();
+  } else {
+    const tokens = rest.split(/\s+/).filter(Boolean);
+    const last = tokens[tokens.length - 1] || '';
+    if (last && /[0-9]/.test(last) && /[\u4e00-\u9fa5a-z]/i.test(last) && !/[楼区室阶座]/i.test(last)) {
+      clazz = last;
+      rest = tokens.slice(0, -1).join(' ').trim();
+    }
   }
   if (slotText !== slot) warnings.push(`${context}：行内节次为 ${slotText}，已按表格列使用 ${slot}`);
   if (!name || !weeks) {
@@ -188,11 +202,11 @@ export function parseExportTable(text: string): ParsedSchedule {
       const rawCell = row[dayStart + dayIndex] ?? '';
       if (!rawCell.trim()) return;
       String(rawCell)
-        .split(/<\s*br\s*\/?>|\n|；/i)
+        .split(/<\s*br\s*\/?>|\n|[;；]/i)
         .forEach((part) => {
           const course = parseCoursePart(part, day, slot, `周${'一二三四五六日'[day - 1]} ${slot}节`, warnings);
           if (!course) return;
-          const key = [course.day, course.slot, course.name, course.weeks, course.parity, course.room, course.clazz].join('|');
+          const key = [course.day, course.slot, course.name, course.weeks, course.parity, course.room, course.clazz, course.count].join('|');
           if (!seen.has(key)) {
             seen.add(key);
             courses.push(course);
@@ -303,7 +317,7 @@ export function parseHtmlTable(html: string): ParsedSchedule {
 
   const markdown = rows
     .filter((row) => row.some((cell) => String(cell || '').trim()))
-    .map((row) => `| ${row.map((cell) => cell || '').join(' | ')} |`)
+    .map((row) => `| ${row.map((cell) => String(cell ?? '').replace(/\|/g, '｜')).join(' | ')} |`)
     .join('\n');
   const parsed = parseExportTable(markdown);
   const documentMeta = extractMeta(documentNode.body.textContent || '');
@@ -365,7 +379,7 @@ export function parseKingoSoftScheduleHtml(html: string): ParsedSchedule {
       clazz: clazz.slice(0, 60),
       count: null,
     };
-    const key = [course.day, course.slot, course.name, course.weeks, course.parity, course.room, course.clazz].join('|');
+    const key = [course.day, course.slot, course.name, course.weeks, course.parity, course.room, course.clazz, course.count].join('|');
     if (!seen.has(key)) {
       seen.add(key);
       courses.push(course);
@@ -391,7 +405,13 @@ export function parseScheduleHtml(html: string): ParsedSchedule {
 
 export function parseScheduleText(text: string): ParsedSchedule {
   const source = String(text ?? '').trim();
-  if (/<table[\s>]/i.test(source)) return parseHtmlTable(source);
+  if (/<table[\s>]|weeklesson/i.test(source)) {
+    try {
+      return parseScheduleHtml(source);
+    } catch {
+      // Fall through to structured/plain-text parsing for non-table clipboard HTML.
+    }
+  }
   try {
     const structured = parseExportTable(source);
     if (structured.courses.length) return structured;

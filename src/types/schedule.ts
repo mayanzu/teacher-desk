@@ -62,10 +62,3 @@ export interface CourseInstance {
   end: Date;
 }
 
-export interface OcrWord {
-  text: string;
-  x: number;
-  y: number;
-  x2: number;
-  y2: number;
-}

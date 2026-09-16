@@ -1,4 +1,4 @@
-import { Camera, ClipboardPaste, QrCode, X } from 'lucide-react';
+import { ClipboardPaste, QrCode, X } from 'lucide-react';
 import { useDialog } from '../hooks/useDialog';
 
 interface OnboardingDialogProps {
@@ -6,10 +6,9 @@ interface OnboardingDialogProps {
   onClose: () => void;
   onAcademicSync: () => void;
   onPaste: () => void;
-  onPhoto: () => void;
 }
 
-export function OnboardingDialog({ open, onClose, onAcademicSync, onPaste, onPhoto }: OnboardingDialogProps) {
+export function OnboardingDialog({ open, onClose, onAcademicSync, onPaste }: OnboardingDialogProps) {
   const ref = useDialog(open, onClose);
   return (
     <dialog ref={ref} className="kapp onboarding-app" aria-labelledby="onboardingTitle">
@@ -31,11 +30,6 @@ export function OnboardingDialog({ open, onClose, onAcademicSync, onPaste, onPho
             <ClipboardPaste aria-hidden="true" />
             <strong>粘贴课表</strong>
             <span>从教务处网页或 Excel 复制表格，粘贴即可识别</span>
-          </button>
-          <button className="onboarding-option" type="button" onClick={onPhoto}>
-            <Camera aria-hidden="true" />
-            <strong>照片识别课表</strong>
-            <span>上传或拍摄纸质、截图课表，在浏览器中识别</span>
           </button>
         </div>
         <p className="kapp-hint">数据只保存在本机浏览器，可随时切换、导出或重新导入。</p>

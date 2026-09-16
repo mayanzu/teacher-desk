@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { DAY_NAMES, BUILDING_TIMES, DEFAULT_TIMES } from '../data/defaults';
 import { SAMPLE_TABLE } from '../data/sample';
@@ -9,7 +9,7 @@ import type { ImportPayload, ParsedSchedule } from '../types/schedule';
 interface PasteImportDialogProps {
   open: boolean;
   onClose: () => void;
-  onSave: (payload: ImportPayload) => void;
+  onSave: (payload: ImportPayload) => boolean;
 }
 
 export function inferSemesterStart() {
@@ -33,8 +33,10 @@ export function clampWeeks(value: unknown, fallback = 20) {
 
 export function PasteImportDialog({ open, onClose, onSave }: PasteImportDialogProps) {
   const ref = useDialog(open, onClose);
+  const wasOpen = useRef(false);
   const [step, setStep] = useState(1);
   const [source, setSource] = useState('');
+  const [sourceHint, setSourceHint] = useState('');
   const [parsed, setParsed] = useState<ParsedSchedule | null>(null);
   const [error, setError] = useState('');
   const [teacher, setTeacher] = useState('');
@@ -43,6 +45,23 @@ export function PasteImportDialog({ open, onClose, onSave }: PasteImportDialogPr
   const [semesterStart, setSemesterStart] = useState(inferSemesterStart);
   const [totalWeeks, setTotalWeeks] = useState(20);
   const [savedTeacher, setSavedTeacher] = useState('');
+
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      setStep(1);
+      setSource('');
+      setSourceHint('');
+      setParsed(null);
+      setError('');
+      setTeacher('');
+      setDepartment('');
+      setSemesterLabel(currentSemesterLabel());
+      setSemesterStart(inferSemesterStart());
+      setTotalWeeks(20);
+      setSavedTeacher('');
+    }
+    wasOpen.current = open;
+  }, [open]);
 
   function applySource(value: string) {
     setError('');
@@ -53,11 +72,11 @@ export function PasteImportDialog({ open, onClose, onSave }: PasteImportDialogPr
     try {
       const result = parseScheduleText(value);
       const withIds = { ...result, courses: result.courses.map((course, index) => ({ ...course, id: `import-${Date.now()}-${index}` })) };
-      setSource(value.includes('<table') ? '已读取剪贴板 HTML 表格结构' : value);
+      setSourceHint(value.includes('<table') ? '已读取剪贴板 HTML 表格结构' : '');
       setParsed(withIds);
       setTeacher(result.teacher || '');
       setDepartment(result.department || '');
-      setTotalWeeks(Math.max(20, result.maxWeek || 0));
+      setTotalWeeks(clampWeeks(Math.max(20, result.maxWeek || 0)));
       setStep(2);
     } catch (cause) {
       setParsed(null);
@@ -115,7 +134,11 @@ export function PasteImportDialog({ open, onClose, onSave }: PasteImportDialogPr
       timesByBuilding: BUILDING_TIMES,
       courses: parsed.courses,
     };
-    onSave(payload);
+    const ok = onSave(payload);
+    if (!ok) {
+      setError('保存失败，请检查本机存储空间后重试。');
+      return;
+    }
     setSavedTeacher(payload.meta.teacher || '我的课表');
     setStep(3);
   }
@@ -145,6 +168,7 @@ export function PasteImportDialog({ open, onClose, onSave }: PasteImportDialogPr
               onPaste={handlePaste}
               placeholder="在这里粘贴教务处课表，支持 Markdown 表格和 Excel 制表符格式。"
             />
+            {sourceHint && <p className="kapp-hint">{sourceHint}</p>}
             <p className="paste-error">{error}</p>
             <div className="paste-actions">
               <button className="kbtn ghost" type="button" onClick={() => setSource(SAMPLE_TABLE)}>填入示例</button>

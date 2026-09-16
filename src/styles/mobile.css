@@ -4,9 +4,8 @@
   /* 顶部只保留必要控制，避免两行导航 */
   .product-nav-inner { min-height: 56px; padding: 7px 10px; gap: 6px; flex-wrap: nowrap; }
   .product-name { padding: 5px 8px 4px; font-size: 13px; border-width: 2px; box-shadow: 3px 3px 0 #e5483c; transform: rotate(-1.5deg); }
-  .product-links, .ns-date, .ns-clock, #motionToggle { display: none !important; }
+  .product-links, .ns-date, #motionToggle { display: none !important; }
   .product-meta { gap: 5px; margin-left: auto; flex-wrap: nowrap; }
-  .nav-pill { padding: 6px 8px 5px; font-size: 10.5px; border-width: 2px; }
   .nav-cta { padding: 7px 9px 6px; font-size: 10.5px; border-width: 2px; }
   .product-meta .icon-button { width: 32px !important; height: 32px !important; border-width: 2px; }
 
@@ -16,7 +15,6 @@
   .eyebrow { margin-bottom: 10px; padding: 6px 9px 5px; border-width: 2px; box-shadow: 3px 3px 0 #1c1c22; font-size: 9.5px; line-height: 1.35; }
   h1 { font-size: clamp(48px, 16vw, 64px); line-height: .96; text-shadow: 3px 3px 0 #ffd84f, 5px 5px 0 #e5483c, 7px 7px 0 #1c1c22; }
   .hero-description { margin-top: 12px; font-size: 12.5px; }
-  .paste-cta { width: 100%; min-height: 42px; margin-top: 12px; padding: 10px 12px 9px; border-width: 2px; box-shadow: 3px 3px 0 #1c1c22; font-size: 12.5px; }
   .stage { min-height: 0; border-width: 3px; border-radius: 18px; box-shadow: 5px 5px 0 #1c1c22; }
   .stage-inner { grid-template-columns: 1fr; gap: 11px; padding: 14px; }
   .stage::after { top: 9px; right: 9px; padding: 4px 7px 3px; border-width: 2px; box-shadow: 2px 2px 0 #1c1c22; font-size: 10px; }
@@ -42,7 +40,6 @@
   .section-heading .sub { margin-top: 5px; font-size: 11.5px; }
   .week-nav { width: 100%; justify-content: space-between; gap: 8px; }
   .segmented { flex: 1; min-width: 0; border-width: 2px; box-shadow: 3px 3px 0 #1c1c22; }
-  .week-readout { min-width: 72px; font-size: 12px; }
   .status-pill { padding: 7px 10px 6px; border-width: 2px; box-shadow: 2px 2px 0 #1c1c22; font-size: 10.5px; }
   .panel-card { padding: 10px; border-width: 3px; border-radius: 18px; box-shadow: 5px 5px 0 #1c1c22; }
   .panel-card::before { top: -11px; left: 13px; padding: 3px 7px 2px; font-size: 8.5px; }
@@ -84,20 +81,4 @@
   .grid-hint { display: block; margin-top: 8px; font-size: 10.5px; text-align: center; }
   .footer { margin: 0 12px; padding: 22px 0 18px; font-size: 11px; line-height: 1.72; }
   .footer p { font-size: 11px; }
-
-  /* 两个导入入口并排固定在底部，避免上下遮挡内容 */
-  .kfab, .paste-fab {
-    bottom: calc(10px + env(safe-area-inset-bottom)) !important;
-    border-width: 2px !important;
-    border-radius: 10px !important;
-    box-shadow: 3px 3px 0 #1c1c22 !important;
-    font-size: 11.5px !important;
-  }
-  .kfab { display: none !important; }
-  .paste-fab { right: 10px; padding: 10px 13px 9px; }
-}
-@media (max-width: 360px) {
-  .nav-pill { display: none; }
-  .kfab { right: 108px !important; }
-  .paste-fab { right: 8px; }
 }

@@ -1,4 +1,5 @@
 import { Bell, Info, Layers, UsersRound, X } from 'lucide-react';
+import type { MouseEvent } from 'react';
 import { BUILDING_NAMES } from '../data/defaults';
 import { useDialog } from '../hooks/useDialog';
 import type { Course } from '../types/schedule';
@@ -30,9 +31,14 @@ export function SettingsDrawer({
 }: SettingsDrawerProps) {
   const ref = useDialog(open, onClose);
   const buildings = [...new Set(courses.map((course) => course.bld).filter(Boolean))].map((key) => BUILDING_NAMES[key!] || key).filter(Boolean);
+  const handleBackdropClick = (event: MouseEvent<HTMLDialogElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const outside = event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom;
+    if (outside) onClose();
+  };
   return (
     <>
-      <dialog ref={ref} className="drawer" aria-labelledby="drawerTitle" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <dialog ref={ref} className="drawer" aria-labelledby="drawerTitle" onClick={handleBackdropClick}>
         <div className="drawer-head">
           <div><h2 id="drawerTitle">设置</h2><p>外观 · 提醒 · 数据说明</p></div>
           <button className="icon-button" type="button" aria-label="关闭设置" onClick={onClose}><X /></button>

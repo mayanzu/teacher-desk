@@ -1,7 +1,11 @@
 node_modules
 .git
 .github
+.env
+.env.*
+.workbuddy
 coverage
 *.log
+*.md
 preview-*.png
 docs

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { MapPin, Users } from 'lucide-react';
 import type { Course } from '../types/schedule';
 
@@ -11,14 +12,17 @@ interface LessonCardProps {
   onClick: () => void;
 }
 
-export function LessonCard({ course, start, end, live, past, extraCount, onClick }: LessonCardProps) {
+export const LessonCard = memo(function LessonCard({ course, start, end, live, past, extraCount, onClick }: LessonCardProps) {
+  const label = [course.name, `${start} 至 ${end}`, course.room, extraCount > 0 ? `另有 ${extraCount} 个课次` : '']
+    .filter(Boolean)
+    .join('，');
   return (
     <button
       className={'lesson' + (live ? ' is-live' : '') + (past ? ' is-past' : '')}
       data-course-color={Array.from(course.name.trim()).reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) % 6, 0)}
       type="button"
       onClick={onClick}
-      aria-label={`${course.name}，${start} 至 ${end}，${course.room}`}
+      aria-label={label}
     >
       {live && <span className="l-live">进行中</span>}
       {extraCount > 0 && <span className="lesson-more">+{extraCount}</span>}
@@ -31,5 +35,4 @@ export function LessonCard({ course, start, end, live, past, extraCount, onClick
       <span className="l-line is-muted"><Users aria-hidden="true" /><span>{course.clazz || '班级待定'}{course.count ? ` · ${course.count} 人` : ''}</span></span>
     </button>
   );
-}
-
+});

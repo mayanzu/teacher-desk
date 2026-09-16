@@ -2,7 +2,7 @@
 
 GitHub: <https://github.com/mayanzu/teacher-timetable>
 
-现代化的教师课表管理应用，支持多教师本机档案、教务处课表粘贴导入、照片识别、教学周导航、课前提醒和随时导出备份。
+现代化的教师课表管理应用，支持多教师本机档案、教务处课表粘贴导入、教学周导航、课前提醒和随时导出备份。
 
 在线地址（局域网）：<http://192.168.31.3:8088/>
 
@@ -20,12 +20,11 @@ GitHub: <https://github.com/mayanzu/teacher-timetable>
 - 多教师档案：同一浏览器保存多位老师课表，随时切换
 - 粘贴导入：识别教务处 Markdown、网页表格和 Excel 制表符格式
 - 自动解析部门、教师、星期、节次、周次、单双周、人数、教室和班级
-- 照片识别：通过 Tesseract.js 在浏览器中识别纸质或截图课表
 - 教学周导航：自动计算当前周，支持上一周、下一周和回到本周
 - 下一节课倒计时、今日课程和本周课次概览
 - 课前浏览器通知提醒
 - 教师档案 JSON 导入与导出备份
-- 桌面端、移动端和深色漫画主题
+- 桌面端、移动端漫画主题
 - Docker + Nginx 部署
 
 ## 技术栈
@@ -38,7 +37,6 @@ GitHub: <https://github.com/mayanzu/teacher-timetable>
 - Zod
 - date-fns
 - Lucide React
-- Tesseract.js
 - Docker + Nginx
 
 ## 教务扫码同步
@@ -78,13 +76,16 @@ npm run build
 docker compose up -d --build
 ```
 
-默认映射到宿主机 `8088` 端口。
+默认映射到宿主机 `8088` 端口（容器内 Nginx 使用非特权用户，监听 `8080`）。前端镜像默认基于 `nginxinc/nginx-unprivileged:alpine`，后端容器使用 `node` 用户运行，并限制内存、进程数与能力集。
 
-低功耗软路由建议在本机执行 `npm run build`，再把 `dist` 交给仅含 Nginx 的运行时镜像：
+低功耗软路由建议先在本机执行 `npm run build`，再把生成好的 `dist` 交给仅含 Nginx 的运行时镜像。`compose.runtime.yaml` **不会**执行前端构建，运行前必须本地先构建：
 
 ```bash
+npm run build
 docker compose -f compose.runtime.yaml up -d --build
 ```
+
+同步后端默认只监听 `127.0.0.1:8787`，可通过 `HOST`、`PORT`、`JWXT_ORIGIN`、`MAX_SESSIONS` 等环境变量覆盖；容器内通过 `HOST=0.0.0.0` 供 Nginx 反向代理访问。
 
 软路由或国内环境可以复制环境变量示例并使用镜像代理：
 
@@ -94,7 +95,7 @@ cp .env.example .env
 
 ```dotenv
 NODE_IMAGE=docker.m.daocloud.io/library/node:22-alpine
-NGINX_IMAGE=docker.m.daocloud.io/library/nginx:alpine
+NGINX_IMAGE=docker.m.daocloud.io/nginxinc/nginx-unprivileged:alpine
 ```
 
 ## 数据模型
@@ -124,11 +125,10 @@ src/
 ├── data/              默认课表、作息和示例
 ├── hooks/             主题、提醒、本地存储等 Hooks
 ├── lib/               日期、课表算法、导入解析
-├── services/          Tesseract 照片识别服务
+├── services/          教务系统对接
 ├── styles/            模块化漫画主题样式
 └── types/             TypeScript 类型
 ```
-
 
 ## License
 

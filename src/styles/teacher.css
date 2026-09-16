@@ -39,7 +39,6 @@
 .teacher-card-actions button{padding:5px 8px;color:#1c1c22;background:#fffdf6;border:2px solid #1c1c22;border-radius:7px;font-size:10.5px;font-weight:900;cursor:pointer}
 .teacher-card-actions button:hover{background:#ffd84f}
 .teacher-card-actions button[data-action="delete"]:hover{color:#fffdf6;background:#e5483c}
-.teacher-empty{padding:24px;text-align:center;color:#625c66;background:#f7efdf;border:2px dashed #1c1c22;border-radius:12px;font-size:12px;font-weight:800}
 .teacher-app .kapp-foot{flex-wrap:wrap}
 .teacher-drawer-btn{width:100%;margin-top:10px}
 @media (max-width:600px){

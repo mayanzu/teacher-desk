@@ -29,18 +29,23 @@ export function useReminders({
     const check = () => {
       const now = new Date();
       const currentWeek = currentWeekNumber(meta.semesterStart, meta.totalWeeks, now);
-      courses.forEach((course, index) => {
+      const weekPrefix = `${currentWeek}-`;
+      notified.current.forEach((key) => {
+        if (!key.startsWith(weekPrefix)) notified.current.delete(key);
+      });
+      courses.forEach((course) => {
         if (!isCourseActive(course, currentWeek, meta.totalWeeks)) return;
         const instance = courseInstance(course, currentWeek, meta.semesterStart, times, buildingTimes);
         const delta = instance.start.getTime() - now.getTime();
         if (delta <= 0 || delta > minutes * 60_000) return;
-        const key = `${currentWeek}-${course.day}-${course.slot}-${course.name}-${index}`;
+        const identity = course.id || `${course.day}-${course.slot}-${course.name}-${course.room}-${course.clazz}`;
+        const key = weekPrefix + identity;
         if (notified.current.has(key)) return;
-        notified.current.add(key);
         try {
           new Notification(`即将开课：${course.name} ${instance.start.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`, {
             body: `${course.room} · ${course.clazz} · ${Math.ceil(delta / 60_000)} 分钟后`,
           });
+          notified.current.add(key);
         } catch (error) {
           onWarning(`提醒发送失败：${String(error)}`);
         }

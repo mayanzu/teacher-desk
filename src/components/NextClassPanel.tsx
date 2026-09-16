@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { format } from 'date-fns';
 import { Clock3, MapPin, Users } from 'lucide-react';
 import { countdownParts, joinMeta } from '../lib/format';
@@ -12,8 +13,10 @@ interface NextClassPanelProps {
   weekRange: string;
 }
 
-export function NextClassPanel({ next, now, todayCount, weekCount, weekRange }: NextClassPanelProps) {
-  const remaining = next ? countdownParts(next.start.getTime() - now.getTime()) : null;
+export const NextClassPanel = memo(function NextClassPanel({ next, now, todayCount, weekCount, weekRange }: NextClassPanelProps) {
+  const live = next ? now >= next.start && now <= next.end : false;
+  const delta = next ? (live ? next.end.getTime() - now.getTime() : next.start.getTime() - now.getTime()) : 0;
+  const remaining = next ? countdownParts(delta) : null;
   return (
     <div className="stage reveal is-in" aria-label="下一节课概览">
       <div className="stage-inner">
@@ -33,13 +36,17 @@ export function NextClassPanel({ next, now, todayCount, weekCount, weekRange }: 
             </p>
           </div>
           {next && <div className="nb-count">
-            <p className="cd-label">距离开课</p>
+            <p className="cd-label">{live ? '进行中' : '距离开课'}</p>
             <p className="cd-value">
               {remaining ? (
-                <>
-                  {remaining.days > 0 && <>{remaining.days}<small className="cd-word">天</small></>}
-                  {remaining.hours}:{remaining.minutes}:{remaining.seconds}
-                </>
+                live ? (
+                  <>剩余 {remaining.hours === '00' ? '' : `${remaining.hours}:`}{remaining.minutes}:{remaining.seconds}</>
+                ) : (
+                  <>
+                    {remaining.days > 0 && <>{remaining.days}<small className="cd-word">天</small></>}
+                    {remaining.hours}:{remaining.minutes}:{remaining.seconds}
+                  </>
+                )
               ) : '—'}
             </p>
           </div>}
@@ -59,6 +66,4 @@ export function NextClassPanel({ next, now, todayCount, weekCount, weekRange }: 
       </div>
     </div>
   );
-}
-
-
+});

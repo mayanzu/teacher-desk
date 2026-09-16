@@ -11,11 +11,6 @@ button svg {
   display: block;
 }
 
-.paste-cta svg {
-  width: 16px;
-  height: 16px;
-}
-
 .teacher-switcher svg:last-of-type {
   flex: none;
 }
@@ -53,15 +48,6 @@ button svg {
 .drawer-head .icon-button:hover {
   color: var(--accent-ink);
   background: var(--accent) !important;
-}
-
-.kopt {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  color: var(--fg-2);
-  font-size: 12.5px;
 }
 
 .teacher-card-actions button {

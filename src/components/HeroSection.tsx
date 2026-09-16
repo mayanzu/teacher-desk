@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { ArrowDown } from 'lucide-react';
 import type { CourseInstance, ScheduleMeta } from '../types/schedule';
 import { formatWeekRange } from '../lib/date';
@@ -15,7 +16,7 @@ interface HeroSectionProps {
   onOpenTeacherManager: () => void;
 }
 
-export function HeroSection({ meta, week, now, next, todayCount, weekCount, hasCourses, onOpenTeacherManager }: HeroSectionProps) {
+export const HeroSection = memo(function HeroSection({ meta, week, now, next, todayCount, weekCount, hasCourses, onOpenTeacherManager }: HeroSectionProps) {
   return (
     <section className={"hero comic-dashboard" + (!hasCourses ? " is-empty" : "")} id="top" aria-labelledby="pageTitle">
       <div className="hero-copy reveal is-in">
@@ -29,5 +30,4 @@ export function HeroSection({ meta, week, now, next, todayCount, weekCount, hasC
       {hasCourses && <NextClassPanel next={next} now={now} todayCount={todayCount} weekCount={weekCount} weekRange={formatWeekRange(meta.semesterStart, week)} />}
     </section>
   );
-}
-
+});

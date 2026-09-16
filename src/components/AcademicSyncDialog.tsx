@@ -14,6 +14,7 @@ interface AcademicSyncDialogProps {
 
 export function AcademicSyncDialog({ open, status, message, qrCodeValue, onStart, onClose }: AcademicSyncDialogProps) {
   const ref = useDialog(open, onClose);
+  const generating = status === 'waiting' && !qrCodeValue;
   return (
     <dialog ref={ref} className="kapp academic-sync-app" aria-labelledby="academicSyncTitle">
       <header className="kapp-head">
@@ -26,7 +27,7 @@ export function AcademicSyncDialog({ open, status, message, qrCodeValue, onStart
       <div className="kapp-body">
         <div className="academic-sync-layout">
           <div className="academic-qr-panel">
-            {qrCodeValue ? <QRCodeSVG value={qrCodeValue} size={250} level="M" bgColor="#fffdf6" fgColor="#1c1c22" marginSize={1} /> : <div className="academic-qr-placeholder"><QrCode /></div>}
+            {qrCodeValue ? <QRCodeSVG value={qrCodeValue} size={250} level="M" bgColor="#fffdf6" fgColor="#1c1c22" marginSize={1} role="img" aria-label="教务扫码登录二维码" /> : <div className="academic-qr-placeholder" aria-hidden="true"><QrCode /></div>}
             <span>{status === 'waiting' ? '二维码有效期约 5 分钟' : '点击下方按钮生成二维码'}</span>
           </div>
           <div className="academic-sync-copy">
@@ -38,7 +39,7 @@ export function AcademicSyncDialog({ open, status, message, qrCodeValue, onStart
               <span>③ 自动保存教师档案</span>
             </div>
             {status !== 'idle' && (
-              <div className={'academic-sync-status is-' + status}>
+              <div className={'academic-sync-status is-' + status} role="status" aria-live="polite">
                 {status === 'success' ? <CheckCircle2 /> : status === 'error' ? <TriangleAlert /> : <QrCode />}
                 <span>{message}</span>
               </div>
@@ -49,7 +50,7 @@ export function AcademicSyncDialog({ open, status, message, qrCodeValue, onStart
       </div>
       <footer className="kapp-foot">
         <span className="kapp-foot-spacer" />
-        <button className="kbtn primary" type="button" onClick={onStart}>
+        <button className="kbtn primary" type="button" onClick={onStart} disabled={generating} aria-busy={generating}>
           {status === 'waiting' ? <RefreshCw size={15} /> : <QrCode size={15} />}
           {status === 'waiting' ? '刷新二维码' : '生成扫码登录二维码'}
         </button>

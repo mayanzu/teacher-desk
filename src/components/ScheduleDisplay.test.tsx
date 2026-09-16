@@ -35,6 +35,14 @@ describe('schedule display behavior', () => {
     expect(screen.queryByText('距离开课')).not.toBeInTheDocument();
   });
 
+  it('shows the remaining time instead of 00:00:00 while a class is in progress', () => {
+    const props = { todayCount: 1, weekCount: 1, weekRange: '9/14–9/20' };
+    render(<NextClassPanel {...props} now={new Date(2026, 8, 16, 14, 0)} next={{ course, week: 4, start: new Date(2026, 8, 16, 13, 30), end: new Date(2026, 8, 16, 15, 5) }} />);
+    expect(screen.getByText('进行中')).toBeInTheDocument();
+    expect(screen.getByText('剩余 01:05:00')).toBeInTheDocument();
+    expect(screen.queryByText('距离开课')).not.toBeInTheDocument();
+  });
+
   it('keeps course color when the same course moves to another day', () => {
     const props = { start: '13:30', end: '15:05', live: false, past: false, extraCount: 0, onClick: vi.fn() };
     const { rerender } = render(<LessonCard {...props} course={course} />);

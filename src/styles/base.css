@@ -57,7 +57,6 @@ button, a, input { -webkit-tap-highlight-color: transparent; }
 svg { display: block; flex-shrink: 0; width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 [hidden] { display: none !important; }
 ::selection { background: #bcd7ff; }
-:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; border-radius: 8px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .skip-link { position: fixed; top: 10px; left: 20px; z-index: 200; background: var(--card); color: var(--fg); padding: 13px 18px; border-radius: 12px; font-size: 14px; font-weight: 600; box-shadow: var(--shadow-md); opacity: 0; pointer-events: none; transform: translateY(-8px); transition: opacity .25s var(--ease), transform .25s var(--ease); }
 .skip-link:focus { opacity: 1; pointer-events: auto; transform: none; }
@@ -82,8 +81,6 @@ svg { display: block; flex-shrink: 0; width: 24px; height: 24px; fill: none; str
 .product-links a:hover { color: var(--fg); }
 .product-links a.active { color: var(--fg); font-weight: 600; }
 .product-meta { display: flex; align-items: center; gap: 10px; margin-left: auto; }
-.nav-pill { padding: 5px 13px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: var(--accent-soft); color: var(--accent-strong); white-space: nowrap; }
-.ns-clock { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ns-date { font-size: 12.5px; color: var(--secondary); white-space: nowrap; }
 .nav-cta { background: var(--accent-fill); color: var(--accent-ink); font-size: 12.5px; font-weight: 600; border-radius: 999px; padding: 8px 16px; white-space: nowrap; transition: transform .25s var(--spring), background .2s; }
 .nav-cta:hover { background: var(--accent-strong); }
@@ -101,10 +98,6 @@ h1 { font-size: clamp(30px, 3.6vw, 44px); font-weight: 650; line-height: 1.12; l
 .button.primary { background: var(--accent-fill); color: var(--accent-ink); }
 .button.primary:active { transform: scale(.96); }
 .button:disabled { opacity: .35; cursor: not-allowed; transform: none; }
-.text-link { color: var(--accent); display: inline-flex; align-items: center; gap: 5px; font-size: 16px; padding: 8px 0; background: transparent; }
-.text-link svg { width: 14px; height: 14px; }
-.text-link:hover { text-decoration: underline; }
-
 /* ---------- 舞台：下一节课 ---------- */
 .stage { position: relative; overflow: hidden; border-radius: 32px; isolation: isolate; background: var(--surface); border: 1px solid var(--line-soft); box-shadow: var(--shadow-md); }
 .stage-inner { position: relative; z-index: 1; display: grid; grid-template-columns: 1.4fr .85fr; gap: 16px; padding: 32px; }
@@ -113,8 +106,6 @@ h1 { font-size: clamp(30px, 3.6vw, 44px); font-weight: 650; line-height: 1.12; l
 .nb-icon svg { width: 25px; height: 25px; }
 .nb-body { min-width: 0; flex: 1 1 240px; }
 .nb-label { font-size: 12px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--fg-3); display: flex; align-items: center; gap: 8px; }
-.live-dot { width: 7px; height: 7px; border-radius: 50%; background: #30d158; animation: pulse 2s ease-out infinite; }
-@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(48,209,88,.5); } 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 .nb-name { font-size: clamp(22px, 2.6vw, 28px); font-weight: 650; letter-spacing: -.03em; margin-top: 6px; line-height: 1.2; }
 .nb-meta { margin-top: 8px; font-size: 13.5px; color: var(--fg-2); display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .nb-meta b { font-weight: 600; }
@@ -142,7 +133,6 @@ h1 { font-size: clamp(30px, 3.6vw, 44px); font-weight: 650; line-height: 1.12; l
 .segmented { display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line-soft); }
 .segmented .icon-button { width: 34px; height: 34px; }
 .segmented .icon-button:hover { background: var(--card); box-shadow: var(--shadow-sm); }
-.week-readout { min-width: 96px; text-align: center; font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; padding: 0 6px; }
 .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: var(--surface-2); color: var(--fg-2); border: 1px solid var(--line-soft); }
 .status-pill.is-ok { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
 .status-pill.is-warn { background: var(--warn-bg); color: var(--accent-strong); border-color: transparent; }
@@ -236,10 +226,6 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.15); }
 input[type="range"]::-moz-range-track { height: 5px; border-radius: 5px; background: var(--surface-3); }
 input[type="range"]::-moz-range-progress { height: 5px; border-radius: 5px; background: var(--accent); }
 input[type="range"]::-moz-range-thumb { width: 21px; height: 21px; border-radius: 50%; background: #fff; border: .5px solid rgba(0,0,0,.12); box-shadow: 0 2px 6px rgba(0,0,0,.28); }
-.segmented-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 4px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line-soft); }
-.segmented-picker button { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 9px 6px; border-radius: 10px; font-size: 13px; font-weight: 500; color: var(--fg-2); transition: background-color .25s, color .25s, box-shadow .25s; }
-.segmented-picker button:hover { color: var(--fg); }
-.segmented-picker button[aria-pressed="true"] { background: var(--card); color: var(--fg); font-weight: 600; box-shadow: var(--shadow-sm); }
 .switch { position: relative; flex: none; width: 51px; height: 31px; padding: 2px; border-radius: 999px; background: var(--switch-off); transition: background-color .3s var(--ease); }
 .switch > span { display: block; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,.25); transition: transform .35s var(--spring); }
 .switch[aria-checked="true"] { background: #34c759; }
@@ -257,14 +243,10 @@ input[type="range"]::-moz-range-thumb { width: 21px; height: 21px; border-radius
 .sheet-row { display: flex; align-items: flex-start; gap: 12px; padding: 13px 0; border-bottom: 1px solid var(--line-soft); }
 .sheet-row:last-child { border-bottom: 0; }
 .sheet-row > svg { width: 17px; height: 17px; color: var(--fg-3); margin-top: 2px; flex: none; }
-.sheet-k { font-size: 12.5px; color: var(--fg-3); }
-.sheet-v { font-size: 15px; font-weight: 500; margin-top: 2px; }
 .sheet-foot { padding: 0 22px 22px; }
 .sheet-foot .button { width: 100%; }
 .toast { position: fixed; left: 50%; bottom: 26px; z-index: 120; transform: translate(-50%, 14px); max-width: calc(100vw - 40px); width: max-content; padding: 12px 20px; border-radius: 999px; background: var(--fg); color: var(--bg); font-size: 13.5px; font-weight: 500; box-shadow: 0 12px 30px -8px rgba(0,0,0,.45); opacity: 0; pointer-events: none; transition: transform .35s var(--spring), opacity .3s var(--ease); }
 .toast.is-visible { transform: translate(-50%, 0); opacity: 1; }
-body.js-motion .reveal { opacity: 0; transform: translateY(24px); transition: opacity .85s var(--ease), transform 1s var(--ease); transition-delay: var(--delay, 0s); }
-body.js-motion .reveal.is-in { opacity: 1; transform: none; }
 /* 手动暂停必须停掉所有动画，而不只是进场动画 */
 body.motion-paused *, body.motion-paused *::before, body.motion-paused *::after { animation-play-state: paused !important; transition-duration: .01ms !important; }
 
@@ -285,7 +267,6 @@ body.motion-paused *, body.motion-paused *::before, body.motion-paused *::after 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
-  body.js-motion .reveal { opacity: 1; transform: none; }
 }
 
 /* ---------- 致命错误回退 ---------- */

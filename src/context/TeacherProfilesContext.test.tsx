@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { TeacherProfilesProvider, useTeacherProfiles } from './TeacherProfilesContext';
 
@@ -24,6 +25,7 @@ function Probe() {
 
 describe('TeacherProfilesContext storage recovery', () => {
   beforeEach(() => localStorage.clear());
+  afterEach(() => vi.restoreAllMocks());
 
   it('keeps valid profiles when a sibling entry is corrupt', () => {
     const good = validProfile('p1', '张三');
@@ -164,5 +166,42 @@ describe('TeacherProfilesContext storage recovery', () => {
 
     fireEvent.click(screen.getByRole('button'));
     expect(screen.getByRole('button').textContent).toBe('30|2026-08-31');
+  });
+
+  it('surfaces a storage write failure instead of silently dropping the import', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('QuotaExceededError');
+    });
+
+    function FailureProbe() {
+      const { profiles, upsertProfile } = useTeacherProfiles();
+      const [message, setMessage] = useState('');
+      return (
+        <>
+          <span>{`${profiles.length}|${message}`}</span>
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                upsertProfile({ meta: { teacher: '示例教师', semesterStart: '2026-08-31', totalWeeks: 20 }, courses: [sampleCourse] });
+              } catch (error) {
+                setMessage(error instanceof Error ? error.message : '未知错误');
+              }
+            }}
+          >
+            导入
+          </button>
+        </>
+      );
+    }
+
+    render(
+      <TeacherProfilesProvider>
+        <FailureProbe />
+      </TeacherProfilesProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button'));
+    expect(screen.getByText('1|本机存储空间不足，请清理后重试')).toBeInTheDocument();
   });
 });

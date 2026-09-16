@@ -1,14 +1,25 @@
 import { addWeeks, differenceInMilliseconds, format, parseISO, startOfWeek } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
+import { DEFAULT_META } from '../data/defaults';
+
+const WEEK_MS = 604_800_000;
+
+function isValidDate(value: Date): boolean {
+  return !Number.isNaN(value.getTime());
+}
 
 export function semesterDate(value: string): Date {
-  return parseISO(`${value}T00:00:00`);
+  const parsed = parseISO(`${value}T00:00:00`);
+  if (isValidDate(parsed)) return parsed;
+  const fallback = parseISO(`${DEFAULT_META.semesterStart}T00:00:00`);
+  return isValidDate(fallback) ? fallback : new Date();
 }
 
 export function currentWeekNumber(semesterStart: string, totalWeeks: number, now = new Date()): number {
   const start = startOfWeek(semesterDate(semesterStart), { weekStartsOn: 1 });
   const current = startOfWeek(now, { weekStartsOn: 1 });
-  const week = Math.floor(differenceInMilliseconds(current, start) / 604_800_000) + 1;
+  const week = Math.floor(differenceInMilliseconds(current, start) / WEEK_MS) + 1;
+  if (!Number.isFinite(week)) return 1;
   return Math.min(totalWeeks, Math.max(1, week));
 }
 

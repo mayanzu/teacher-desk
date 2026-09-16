@@ -102,4 +102,76 @@ describe('parseExportTable', () => {
   it('rejects text without weekday headers', () => {
     expect(() => parseExportTable('示例课程A [1-8]周 1-2节 30 A楼101 示例班级')).toThrow();
   });
+
+  it('accepts "(单)" parity and weeks written inside the brackets', () => {
+    const source = [
+      '| | 星期一 | 星期二 |',
+      '| 1-2 | 高数 [7-17]周(单) 1-2节 30 A楼101 示例一班 | 英语 [2-17周] 1-2节 30 A楼102 示例二班 |',
+    ].join('\n');
+    const result = parseExportTable(source);
+    expect(result.courses).toHaveLength(2);
+    expect(result.courses[0]).toMatchObject({ weeks: '7-17', parity: 'odd' });
+    expect(result.courses[1]).toMatchObject({ weeks: '2-17', parity: null });
+  });
+
+  it('strips the "第" prefix and normalizes full-width separators in weeks', () => {
+    const source = [
+      '| | 星期一 |',
+      '| 1-2 | 高数 [第1-4，6、8-9]周 1-2节 30 A楼101 示例一班 |',
+    ].join('\n');
+    const result = parseExportTable(source);
+    expect(result.courses).toHaveLength(1);
+    expect(result.courses[0].weeks).toBe('1-4,6,8-9');
+  });
+
+  it('splits multiple courses separated by an ASCII semicolon', () => {
+    const source = [
+      '| | 星期一 |',
+      '| 1-2 | A课 [1-2]周 1-2节 1 A楼101 一班; B课 [1-2]周 1-2节 1 A楼102 二班 |',
+    ].join('\n');
+    const result = parseExportTable(source);
+    expect(result.courses.map((course) => course.name).sort()).toEqual(['A课', 'B课']);
+  });
+
+  it('does not treat a time cell as a period', () => {
+    const source = [
+      '| 时间 | 节次 | 星期一 |',
+      '| 08:10-08:55 | 1-2 | 高数 [1-16]周 1-2节 30 A楼101 示例一班 |',
+    ].join('\n');
+    const result = parseExportTable(source);
+    expect(result.courses).toHaveLength(1);
+    expect(result.courses[0]).toMatchObject({ slot: '1-2', day: 1 });
+  });
+
+  it('recognizes a class number that does not end with 班', () => {
+    const source = [
+      '| | 星期一 |',
+      '| 1-2 | 高数 [1-16]周 1-2节 30 A楼101 软件2101 |',
+    ].join('\n');
+    const result = parseExportTable(source);
+    expect(result.courses[0]).toMatchObject({ room: 'A楼101', clazz: '软件2101' });
+  });
+
+  it('keeps a "|" inside a cell from breaking the column structure', () => {
+    const html = `<table>
+      <tr><td>节次</td><td>星期一</td></tr>
+      <tr><td>1-2</td><td>组合|课程 [1-2]周 1-2节 1 A楼101 示例一班</td></tr>
+    </table>`;
+    const result = parseHtmlTable(html);
+    expect(result.courses).toHaveLength(1);
+    expect(result.courses[0].day).toBe(1);
+    expect(result.courses[0].name).toContain('组合');
+  });
+
+  it('parses weeklesson-only clipboard HTML through parseScheduleText', () => {
+    const html = `<div id="weekly02_1" class="weeklesson"><ul>
+      <li>课程名称：A课</li>
+      <li>上课时间：[1-8周] 二[1-2节]</li>
+      <li>上课地点：A楼101</li>
+      <li>合班信息：示例一班</li>
+    </ul></div>`;
+    const result = parseScheduleText(html);
+    expect(result.source).toBe('kingosoft');
+    expect(result.courses).toHaveLength(1);
+  });
 });

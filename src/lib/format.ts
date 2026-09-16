@@ -15,9 +15,9 @@ export function countdownParts(milliseconds: number): CountdownParts {
 }
 
 export function initials(name: string): string {
-  return name.trim().slice(0, 1) || '师';
+  return [...name.trim()][0] ?? '师';
 }
 
 export function joinMeta(parts: Array<string | number | undefined | null>): string {
-  return parts.filter(Boolean).join(' · ');
+  return parts.filter((part) => part !== undefined && part !== null && part !== '').join(' · ');
 }

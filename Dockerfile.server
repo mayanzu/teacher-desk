@@ -1,7 +1,11 @@
 ARG NODE_IMAGE=node:22-alpine
 FROM ${NODE_IMAGE}
 WORKDIR /app
-COPY server/slu-sync-server.mjs ./server.mjs
+COPY --chown=node:node server/slu-sync-server.mjs ./server.mjs
 ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+ENV PORT=8787
+USER node
 EXPOSE 8787
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD node -e "fetch('http://127.0.0.1:8787/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 CMD ["node", "server.mjs"]

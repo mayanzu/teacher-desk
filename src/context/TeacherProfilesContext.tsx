@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { z } from 'zod';
 import { BUILDING_TIMES, DEFAULT_META, DEFAULT_TIMES } from '../data/defaults';
 import { downloadJson, safeFilename } from '../lib/download';
@@ -48,7 +48,7 @@ export function blankProfile(): TeacherProfile {
   return {
     id: uid(),
     meta: { teacher: '我的课表', department: '', semesterLabel: '', semesterStart: DEFAULT_META.semesterStart, totalWeeks: DEFAULT_META.totalWeeks },
-    times: { ...DEFAULT_TIMES },
+    times: structuredClone(DEFAULT_TIMES),
     timesByBuilding: structuredClone(BUILDING_TIMES),
     courses: [],
     createdAt: now,
@@ -82,7 +82,15 @@ function readActive(fallback: string): string {
   }
 }
 
-function readProfiles(): TeacherProfile[] {
+interface StoredProfiles {
+  profiles: TeacherProfile[];
+  needsWrite: boolean;
+  activeToWrite: string | null;
+  backupRaw: string | null;
+}
+
+function readStoredProfiles(): StoredProfiles {
+  let backupRaw: string | null = null;
   try {
     const raw = localStorage.getItem(PROFILE_KEY);
     if (raw) {
@@ -91,26 +99,19 @@ function readProfiles(): TeacherProfile[] {
         const valid: TeacherProfile[] = [];
         items.forEach((item) => {
           const result = profileSchema.safeParse(item);
-          if (result.success) valid.push(result.data as TeacherProfile);
+          if (result.success) valid.push(result.data);
         });
         if (valid.length) {
-          if (valid.length !== items.length) writeProfiles(valid);
-          return valid;
+          return { profiles: valid, needsWrite: valid.length !== items.length, activeToWrite: null, backupRaw: null };
         }
-        try {
-          localStorage.setItem(`${PROFILE_KEY}-corrupt-${Date.now()}`, raw);
-        } catch {
-          // Keep going even if the backup cannot be written.
-        }
+        backupRaw = raw;
       }
     }
   } catch {
     // Ignore corrupt local data and seed an empty profile.
   }
   const seed = [blankProfile()];
-  writeProfiles(seed);
-  writeActive(seed[0].id);
-  return seed;
+  return { profiles: seed, needsWrite: true, activeToWrite: seed[0].id, backupRaw };
 }
 
 function normalizePayload(payload: ImportPayload): TeacherProfile {
@@ -124,8 +125,8 @@ function normalizePayload(payload: ImportPayload): TeacherProfile {
       semesterStart: payload.meta.semesterStart || DEFAULT_META.semesterStart,
       totalWeeks,
     }),
-    times: payload.times || DEFAULT_TIMES,
-    timesByBuilding: payload.timesByBuilding,
+    times: payload.times ? structuredClone(payload.times) : structuredClone(DEFAULT_TIMES),
+    timesByBuilding: structuredClone(payload.timesByBuilding || BUILDING_TIMES),
     courses: payload.courses,
     createdAt: now,
     updatedAt: now,
@@ -136,7 +137,8 @@ function sameProfile(a: TeacherProfile, b: TeacherProfile) {
   return (
     a.meta.teacher === b.meta.teacher &&
     a.meta.department === b.meta.department &&
-    a.meta.semesterLabel === b.meta.semesterLabel
+    a.meta.semesterLabel === b.meta.semesterLabel &&
+    a.meta.semesterStart === b.meta.semesterStart
   );
 }
 
@@ -156,15 +158,28 @@ interface TeacherProfilesContextValue {
 const TeacherProfilesContext = createContext<TeacherProfilesContextValue | null>(null);
 
 export function TeacherProfilesProvider({ children }: { children: ReactNode }) {
-  const [profiles, setProfiles] = useState<TeacherProfile[]>(readProfiles);
+  const [stored] = useState(readStoredProfiles);
+  const [profiles, setProfiles] = useState<TeacherProfile[]>(stored.profiles);
   const [activeId, setActiveId] = useState(() => {
-    const saved = readActive(profiles[0].id);
-    return profiles.some((profile) => profile.id === saved) ? saved : profiles[0].id;
+    const saved = readActive(stored.profiles[0].id);
+    return stored.profiles.some((profile) => profile.id === saved) ? saved : stored.profiles[0].id;
   });
 
+  useEffect(() => {
+    if (stored.backupRaw) {
+      try {
+        localStorage.setItem(`${PROFILE_KEY}-corrupt-${Date.now()}`, stored.backupRaw);
+      } catch {
+        // Keep going even if the backup cannot be written.
+      }
+    }
+    if (stored.needsWrite) writeProfiles(stored.profiles);
+    if (stored.activeToWrite) writeActive(stored.activeToWrite);
+  }, [stored]);
+
   const persistProfiles = useCallback((next: TeacherProfile[]) => {
+    if (!writeProfiles(next)) throw new Error('本机存储空间不足，请清理后重试');
     setProfiles(next);
-    writeProfiles(next);
   }, []);
 
   const activate = useCallback((id: string) => {
@@ -238,7 +253,7 @@ export function TeacherProfilesProvider({ children }: { children: ReactNode }) {
     items.forEach((item) => {
       const parsed = profileSchema.safeParse(item);
       if (!parsed.success) return;
-      const candidate = { ...(parsed.data as TeacherProfile), id: uid(), builtin: false };
+      const candidate: TeacherProfile = { ...parsed.data, id: uid(), builtin: false };
       next = [...next.filter((profile) => !sameProfile(profile, candidate)), candidate];
       count += 1;
     });

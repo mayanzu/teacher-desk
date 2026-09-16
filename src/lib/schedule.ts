@@ -4,10 +4,11 @@ import type { BuildingTimes, Course, CourseInstance, ScheduleTimes } from '../ty
 
 export function parseWeeks(text: string, totalWeeks: number): Set<number> {
   const result = new Set<number>();
-  String(text)
-    .split(',')
+  String(text ?? '')
+    .replace(/[周第\s]/g, '')
+    .split(/[,，、;；]+/)
     .forEach((part) => {
-      const match = part.trim().match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+      const match = part.match(/^(\d+)(?:-(\d+))?$/);
       if (!match) return;
       const from = Number(match[1]);
       const to = match[2] ? Number(match[2]) : from;

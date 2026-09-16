@@ -10,6 +10,14 @@ export function downloadJson(filename: string, value: unknown): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
+const RESERVED_NAMES = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
+
 export function safeFilename(value: string): string {
-  return value.replace(/[\\/:*?"<>|]/g, '_');
+  const cleaned = String(value ?? '')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, ' ')
+    .replace(/[. ]+$/g, '')
+    .trim();
+  if (!cleaned || RESERVED_NAMES.test(cleaned)) return '课表';
+  return cleaned;
 }

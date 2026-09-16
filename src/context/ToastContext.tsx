@@ -1,11 +1,15 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-interface ToastContextValue {
+interface ToastMessageValue {
   message: string;
+}
+
+interface ToastActionsValue {
   notify: (message: string) => void;
 }
 
-const ToastContext = createContext<ToastContextValue | null>(null);
+const ToastMessageContext = createContext<ToastMessageValue | null>(null);
+const ToastActionsContext = createContext<ToastActionsValue | null>(null);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [message, setMessage] = useState('');
@@ -15,12 +19,35 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     if (timer.current) window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => setMessage(''), 2600);
   }, []);
-  const value = useMemo(() => ({ message, notify }), [message, notify]);
-  return <ToastContext.Provider value={value}>{children}</ToastContext.Provider>;
+
+  useEffect(() => () => {
+    if (timer.current) window.clearTimeout(timer.current);
+  }, []);
+
+  const messageValue = useMemo<ToastMessageValue>(() => ({ message }), [message]);
+  const actionsValue = useMemo<ToastActionsValue>(() => ({ notify }), [notify]);
+
+  return (
+    <ToastActionsContext.Provider value={actionsValue}>
+      <ToastMessageContext.Provider value={messageValue}>{children}</ToastMessageContext.Provider>
+    </ToastActionsContext.Provider>
+  );
+}
+
+export function useToastMessage(): ToastMessageValue {
+  const context = useContext(ToastMessageContext);
+  if (!context) throw new Error('useToastMessage must be used within ToastProvider');
+  return context;
+}
+
+export function useToastActions(): ToastActionsValue {
+  const context = useContext(ToastActionsContext);
+  if (!context) throw new Error('useToastActions must be used within ToastProvider');
+  return context;
 }
 
 export function useToast() {
-  const context = useContext(ToastContext);
-  if (!context) throw new Error('useToast must be used within ToastProvider');
-  return context;
+  const message = useToastMessage();
+  const actions = useToastActions();
+  return { message: message.message, notify: actions.notify };
 }

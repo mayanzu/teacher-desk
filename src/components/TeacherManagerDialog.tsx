@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import { Download, FileUp, Plus, QrCode, Trash2, UserRound, X } from 'lucide-react';
 import { useDialog } from '../hooks/useDialog';
 import { useTeacherProfiles } from '../context/TeacherProfilesContext';
-import { useToast } from '../context/ToastContext';
+import { useToastActions } from '../context/ToastContext';
 import { initials, joinMeta } from '../lib/format';
 
 interface TeacherManagerDialogProps {
@@ -15,7 +15,7 @@ interface TeacherManagerDialogProps {
 export function TeacherManagerDialog({ open, onClose, onOpenPaste, onOpenAcademicSync }: TeacherManagerDialogProps) {
   const ref = useDialog(open, onClose);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { notify } = useToast();
+  const { notify } = useToastActions();
   const {
     profiles,
     activeProfile,

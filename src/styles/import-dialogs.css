@@ -62,3 +62,9 @@ table.ktable{border-collapse:separate;border-spacing:0;width:100%;min-width:560p
   .kapp{width:calc(100vw - 16px);max-height:92vh;border-radius:22px}
   .kapp-head,.kapp-body,.kapp-foot{padding-left:16px;padding-right:16px}
 }
+.onboarding-options{display:grid;gap:12px}
+.onboarding-option{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:14px;row-gap:4px;align-items:center;text-align:left;padding:16px 18px;border:2px solid var(--line);border-radius:18px;background:var(--surface);color:var(--fg);cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
+.onboarding-option:hover,.onboarding-option:focus-visible{border-color:var(--accent);transform:translateY(-2px);box-shadow:5px 5px 0 var(--accent)}
+.onboarding-option svg{grid-row:1 / span 2;width:30px;height:30px;color:var(--accent)}
+.onboarding-option strong{font-size:15.5px}
+.onboarding-option span{font-size:12.5px;color:var(--secondary);line-height:1.5}

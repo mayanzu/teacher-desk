@@ -64,26 +64,7 @@ body::after {
   opacity: .42;
   background-image: repeating-linear-gradient(112deg, transparent 0 17px, rgba(28,28,34,.035) 17px 18px);
   mask-image: linear-gradient(180deg, transparent 0, #000 22%, #000 72%, transparent 100%);
-}
-[data-theme="dark"] {
-  --bg: #f3ead5;
-  --surface: #fffdf6;
-  --surface-2: #f7efdf;
-  --surface-3: #ead7ae;
-  --card: #fffdf6;
-  --fg: #1c1c22;
-  --fg-2: #48434c;
-  --fg-3: #746e78;
-  --secondary: #625c66;
-  --line: #1c1c22;
-  --line-soft: #c8bda6;
-  --lesson-ink: #1c1c22;
-  --lesson-bg: #fffdf6;
-  --lesson-bg-hover: #fff3a9;
-  color-scheme: light;
-}
-[data-theme="dark"] body { background-color: #f3ead5; }
-::selection { background: #ffd44f; color: #1c1c22; }
+}::selection { background: #ffd44f; color: #1c1c22; }
 :focus-visible { outline: 3px solid #1c1c22; outline-offset: 4px; border-radius: 10px; }
 
 /* ---------- Comic navigation ---------- */
@@ -526,82 +507,7 @@ h1 {
   border: 3px solid #1c1c22;
   box-shadow: 5px 5px 0 #1c1c22;
   font-weight: 900;
-}
-
-
-/* ---------- Dark comic variant ---------- */
-html[data-theme="dark"] {
-  --bg: #1b1a22;
-  --surface: #27252f;
-  --surface-2: #332f3c;
-  --surface-3: #413b48;
-  --card: #27252f;
-  --fg: #fff8e7;
-  --fg-2: #ddd3c2;
-  --fg-3: #aaa091;
-  --secondary: #c3baa9;
-  --line: #fff8e7;
-  --line-soft: #56505d;
-  --accent: #ff6155;
-  --accent-strong: #ff9a90;
-  --accent-fill: #e5483c;
-  --accent-soft: #5a2c2d;
-  --ok: #64d49c;
-  --ok-bg: #183b2d;
-  --warn-bg: #5d4b16;
-  --lesson-ink: #1c1c22;
-  --lesson-bg: #fffdf6;
-  --lesson-bg-hover: #fff3a9;
-  --switch-off: #514b57;
-  color-scheme: dark;
-}
-html[data-theme="dark"], html[data-theme="dark"] body { background-color: #1b1a22; }
-html[data-theme="dark"] body {
-  color: #fff8e7;
-  background-image:
-    radial-gradient(circle, rgba(255,248,231,.105) 1px, transparent 1.25px),
-    linear-gradient(118deg, rgba(255,255,255,.025), rgba(255,255,255,0) 48%);
-}
-html[data-theme="dark"] body::before {
-  background:
-    radial-gradient(circle at 8% 4%, rgba(43,126,185,.22) 0 7%, transparent 25%),
-    radial-gradient(circle at 94% 12%, rgba(229,72,60,.18) 0 8%, transparent 26%),
-    radial-gradient(circle at 82% 93%, rgba(38,155,104,.12) 0 7%, transparent 24%),
-    linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,0));
-}
-html[data-theme="dark"] body::after { opacity: .28; }
-html[data-theme="dark"] h1 { color: #fff8e7; text-shadow: 4px 4px 0 #ffd84f, 8px 8px 0 #e5483c, 12px 12px 0 #07070a; }
-html[data-theme="dark"] .hero-description, html[data-theme="dark"] .section-heading .sub,
-html[data-theme="dark"] .footer, html[data-theme="dark"] .grid-hint { color: #c3baa9; }
-html[data-theme="dark"] .stage, html[data-theme="dark"] .panel-card {
-  background: #27252f !important;
-  border-color: #fff8e7;
-  box-shadow: 9px 9px 0 #fff8e7;
-}
-html[data-theme="dark"] .next-card, html[data-theme="dark"] .mini-card { border-color: #1c1c22; box-shadow: 5px 5px 0 #1c1c22; }
-html[data-theme="dark"] .section-heading h2 { color: #fff8e7; text-shadow: 3px 3px 0 #e5483c; }
-html[data-theme="dark"] .segmented, html[data-theme="dark"] .status-pill { border-color: #fff8e7; box-shadow: 4px 4px 0 #fff8e7; }
-html[data-theme="dark"] .week-readout { color: #1c1c22; }
-html[data-theme="dark"] .panel-card::before { border-color: #fff8e7; }
-html[data-theme="dark"] .cell-time { border-color: #fff8e7; box-shadow: 4px 4px 0 #e5483c; }
-html[data-theme="dark"] .cell-day { border-color: #1c1c22; box-shadow: 3px 3px 0 #1c1c22; }
-html[data-theme="dark"] .gc { background: rgba(255,248,231,.045); border-color: rgba(255,248,231,.28); }
-html[data-theme="dark"] .gc.is-today-col { background: rgba(255,216,79,.12); }
-html[data-theme="dark"] .drawer, html[data-theme="dark"] .sheet, html[data-theme="dark"] .kapp {
-  color: #fff8e7;
-  background: #27252f !important;
-  border-color: #fff8e7 !important;
-  box-shadow: 9px 9px 0 #fff8e7 !important;
-}
-html[data-theme="dark"] .drawer-head, html[data-theme="dark"] .sheet-head,
-html[data-theme="dark"] .sheet-foot, html[data-theme="dark"] .kapp-head,
-html[data-theme="dark"] .kapp-foot { border-color: #56505d !important; }
-html[data-theme="dark"] .setting-group > h3 { color: #fff8e7; }
-html[data-theme="dark"] .setting-group { border-color: #56505d !important; }
-html[data-theme="dark"] .footer { border-top-color: #fff8e7; }
-html[data-theme="dark"] .footer b { color: #1c1c22; }
-
-@media (max-width: 1040px) {
+}@media (max-width: 1040px) {
   .hero { grid-template-columns: 1fr; gap: 32px; }
   .hero-copy { max-width: none; }
   .stage-inner { grid-template-columns: minmax(0, 1fr) 190px; }

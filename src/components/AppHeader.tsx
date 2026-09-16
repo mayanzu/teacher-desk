@@ -1,13 +1,10 @@
-import { Camera, Moon, Pause, Play, Settings2, Sun } from 'lucide-react';
+import { Camera, Pause, Play, Settings2 } from 'lucide-react';
 import { formatClock, formatDate } from '../lib/date';
-import type { Theme } from '../hooks/useTheme';
 
 interface AppHeaderProps {
   date: Date;
   week: number;
-  theme: Theme;
   motionPaused: boolean;
-  onToggleTheme: () => void;
   onToggleMotion: () => void;
   onPhotoImport: () => void;
   onOpenSettings: () => void;
@@ -17,9 +14,7 @@ interface AppHeaderProps {
 export function AppHeader({
   date,
   week,
-  theme,
   motionPaused,
-  onToggleTheme,
   onToggleMotion,
   onPhotoImport,
   onOpenSettings,
@@ -38,9 +33,6 @@ export function AppHeader({
           <span className="ns-clock">{formatClock(date)}</span>
           <span className="nav-pill">第 {week} 教学周</span>
           <button className="nav-cta" type="button" onClick={onToday}>回到本周</button>
-          <button className="icon-button" type="button" aria-label={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'} onClick={onToggleTheme}>
-            {theme === 'dark' ? <Sun /> : <Moon />}
-          </button>
           <button className="icon-button" id="motionToggle" type="button" aria-label={motionPaused ? '恢复动态效果' : '暂停动态效果'} onClick={onToggleMotion}>
             {motionPaused ? <Play /> : <Pause />}
           </button>

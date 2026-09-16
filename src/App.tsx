@@ -3,6 +3,7 @@ import { AcademicSyncDialog } from './components/AcademicSyncDialog';
 import { AppHeader } from './components/AppHeader';
 import { CourseDetailDialog } from './components/CourseDetailDialog';
 import { HeroSection } from './components/HeroSection';
+import { OnboardingDialog } from './components/OnboardingDialog';
 import { PasteImportDialog } from './components/PasteImportDialog';
 import { PhotoImportDialog } from './components/PhotoImportDialog';
 import { ScheduleSection } from './components/ScheduleSection';
@@ -15,7 +16,6 @@ import { useLocalStorage } from './hooks/useLocalStorage';
 import { useMotion } from './hooks/useMotion';
 import { useNow } from './hooks/useNow';
 import { useReminders } from './hooks/useReminders';
-import { useTheme } from './hooks/useTheme';
 import { useTeacherProfiles } from './context/TeacherProfilesContext';
 import { useToast } from './context/ToastContext';
 import { currentWeekNumber } from './lib/date';
@@ -23,9 +23,8 @@ import { isCourseActive, nextCourseInstance } from './lib/schedule';
 import type { Course, ImportPayload } from './types/schedule';
 
 export default function App() {
-  const { activeProfile, upsertProfile } = useTeacherProfiles();
+  const { activeProfile, profiles, upsertProfile } = useTeacherProfiles();
   const { notify } = useToast();
-  const { theme, toggleTheme } = useTheme();
   const { paused: motionPaused, toggle: toggleMotion } = useMotion();
   const now = useNow();
   const [reduceTransparency, setReduceTransparency] = useLocalStorage('kb-reduce-transparency', false);
@@ -40,6 +39,8 @@ export default function App() {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(false);
   const [selectedCourses, setSelectedCourses] = useState<Course[]>([]);
+  const [onboardingClosed, setOnboardingClosed] = useState(false);
+  const needsOnboarding = !onboardingClosed && profiles.length === 1 && activeProfile.courses.length === 0;
 
   const times = useMemo(() => ({ ...DEFAULT_TIMES, ...activeProfile.times }), [activeProfile.times]);
   const buildingTimes = useMemo(() => ({ ...BUILDING_TIMES, ...activeProfile.timesByBuilding }), [activeProfile.timesByBuilding]);
@@ -127,9 +128,7 @@ export default function App() {
       <AppHeader
         date={now}
         week={viewWeek}
-        theme={theme}
         motionPaused={motionPaused}
-        onToggleTheme={toggleTheme}
         onToggleMotion={toggleMotion}
         onPhotoImport={() => setPhotoOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -170,13 +169,11 @@ export default function App() {
 
       <SettingsDrawer
         open={settingsOpen}
-        theme={theme}
         motionPaused={motionPaused}
         reduceTransparency={reduceTransparency}
         reminderEnabled={reminderEnabled}
         courses={courses}
         onClose={() => setSettingsOpen(false)}
-        onToggleTheme={toggleTheme}
         onToggleMotion={toggleMotion}
         onToggleTransparency={() => setReduceTransparency((value) => !value)}
         onToggleReminder={toggleReminder}
@@ -187,6 +184,12 @@ export default function App() {
         onClose={() => setTeacherOpen(false)}
         onOpenPaste={() => { setTeacherOpen(false); setPasteOpen(true); }}
         onOpenAcademicSync={() => { setTeacherOpen(false); setAcademicSyncOpen(true); academicSync.start(); }}
+      />
+      <OnboardingDialog
+        open={needsOnboarding}
+        onClose={() => setOnboardingClosed(true)}
+        onAcademicSync={() => { setOnboardingClosed(true); setAcademicSyncOpen(true); academicSync.start(); }}
+        onPaste={() => { setOnboardingClosed(true); setPasteOpen(true); }}
       />
       <AcademicSyncDialog
         open={academicSyncOpen}

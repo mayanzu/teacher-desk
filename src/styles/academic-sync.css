@@ -28,5 +28,3 @@
 .academic-sync-help svg{width:15px;height:15px;flex:none}
 .academic-sync-help a{display:inline-flex;align-items:center;gap:5px;width:max-content;color:#b52227;font-weight:900}
 @media(max-width:600px){.academic-sync-layout{grid-template-columns:1fr}.academic-qr-panel{order:-1}.academic-qr-panel img,.academic-qr-panel>svg,.academic-qr-placeholder{width:220px!important;height:220px!important}.academic-sync-hero{align-items:flex-start}.paste-secondary{width:100%}}
-html[data-theme="dark"] .academic-sync-hero,html[data-theme="dark"] .academic-sync-steps span{color:#1c1c22}
-html[data-theme="dark"] .academic-sync-help{border-color:#56505d;color:#c3baa9}

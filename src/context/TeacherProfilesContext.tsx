@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { z } from 'zod';
-import { BUILDING_TIMES, DEFAULT_COURSES, DEFAULT_META, DEFAULT_TIMES } from '../data/defaults';
+import { BUILDING_TIMES, DEFAULT_META, DEFAULT_TIMES } from '../data/defaults';
 import { downloadJson, safeFilename } from '../lib/download';
 import type { ImportPayload, ScheduleMeta, TeacherProfile } from '../types/schedule';
 
@@ -41,20 +41,6 @@ const ACTIVE_KEY = 'kb-active-teacher';
 
 function uid() {
   return `teacher_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function builtinProfile(): TeacherProfile {
-  const now = new Date().toISOString();
-  return {
-    id: 'builtin',
-    meta: { ...DEFAULT_META },
-    times: { ...DEFAULT_TIMES },
-    timesByBuilding: structuredClone(BUILDING_TIMES),
-    courses: structuredClone(DEFAULT_COURSES),
-    createdAt: now,
-    updatedAt: now,
-    builtin: true,
-  };
 }
 
 export function blankProfile(): TeacherProfile {
@@ -119,9 +105,9 @@ function readProfiles(): TeacherProfile[] {
       }
     }
   } catch {
-    // Ignore corrupt local data and seed the built-in profile.
+    // Ignore corrupt local data and seed an empty profile.
   }
-  const seed = [builtinProfile()];
+  const seed = [blankProfile()];
   writeProfiles(seed);
   writeActive(seed[0].id);
   return seed;
@@ -189,7 +175,8 @@ export function TeacherProfilesProvider({ children }: { children: ReactNode }) {
 
   const upsertProfile = useCallback((payload: ImportPayload, activate = true) => {
     const candidate = normalizePayload(payload);
-    const index = profiles.findIndex((profile) => sameProfile(profile, candidate));
+    const placeholder = profiles.length === 1 && profiles[0].courses.length === 0 && !profiles[0].builtin;
+    const index = placeholder ? 0 : profiles.findIndex((profile) => sameProfile(profile, candidate));
     let saved: TeacherProfile;
     const next = [...profiles];
     if (index >= 0) {

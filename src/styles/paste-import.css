@@ -65,8 +65,3 @@
   .paste-course-weeks{grid-column:2;justify-self:start}
   .paste-day{grid-template-columns:52px minmax(0,1fr)}
 }
-html[data-theme="dark"] .paste-source{color:#fff8e7;background:#1b1a22;border-color:#fff8e7}
-html[data-theme="dark"] .paste-guideline span{color:#1c1c22}
-html[data-theme="dark"] .paste-summary{color:#1c1c22}
-html[data-theme="dark"] .paste-course{color:#1c1c22}
-html[data-theme="dark"] .paste-course-meta{color:#625c66}

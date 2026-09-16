@@ -52,10 +52,3 @@
   .teacher-card-actions{width:100%;justify-content:flex-start;padding-left:51px}
   .teacher-list{max-height:46vh}
 }
-html[data-theme="dark"] .teacher-switcher,
-html[data-theme="dark"] .teacher-card{color:#fff8e7;background:#27252f;border-color:#fff8e7;box-shadow:4px 4px 0 #fff8e7}
-html[data-theme="dark"] .teacher-switcher .ts-label,
-html[data-theme="dark"] .teacher-card-meta{color:#c3baa9}
-html[data-theme="dark"] .teacher-card.is-active{background:#4c4220}
-html[data-theme="dark"] .teacher-card-actions button{color:#fff8e7;background:#332f3c;border-color:#fff8e7}
-html[data-theme="dark"] .teacher-empty{color:#c3baa9;background:#332f3c;border-color:#fff8e7}

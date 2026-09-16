@@ -64,19 +64,3 @@
 @media (hover: none) {
   .lesson:hover { transform: none !important; box-shadow: 5px 5px 0 #1c1c22 !important; }
 }
-html[data-theme="dark"] .lesson:hover,
-html[data-theme="dark"] .lesson:focus-visible,
-html[data-theme="dark"] .lesson.is-hover {
-  box-shadow:
-    0 0 0 3px #ffd84f,
-    0 0 0 6px #fff8e7,
-    10px 10px 0 #fff8e7,
-    0 18px 30px rgba(0,0,0,.48) !important;
-}
-html[data-theme="dark"] .lesson:focus-visible {
-  box-shadow:
-    0 0 0 4px #ffd84f,
-    0 0 0 8px #fff8e7,
-    12px 12px 0 #fff8e7,
-    0 20px 34px rgba(0,0,0,.55) !important;
-}

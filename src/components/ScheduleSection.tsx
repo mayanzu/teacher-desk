@@ -16,6 +16,7 @@ interface ScheduleSectionProps {
   buildingTimes: BuildingTimes;
   onWeekChange: (week: number) => void;
   onToday: () => void;
+  onImport: () => void;
   onSelectCourses: (courses: Course[]) => void;
 }
 
@@ -28,6 +29,7 @@ export function ScheduleSection({
   buildingTimes,
   onWeekChange,
   onToday,
+  onImport,
   onSelectCourses,
 }: ScheduleSectionProps) {
   useEffect(() => {
@@ -53,7 +55,6 @@ export function ScheduleSection({
     const active = coursesForCell(courses, course.day, course.slot, viewWeek, meta.totalWeeks);
     return active.some((item) => item === course);
   }).length;
-  const todayCount = courses.filter((course) => course.day === today && coursesForCell(courses, course.day, course.slot, viewWeek, meta.totalWeeks).includes(course)).length;
 
   return (
     <section className="section" id="schedule" aria-labelledby="scheduleTitle">
@@ -62,19 +63,19 @@ export function ScheduleSection({
           <h2 id="scheduleTitle">第 {viewWeek} 周课表</h2>
           <p className="sub">{range} · 共 {weekCount} 个课次</p>
         </div>
-        <div className="week-nav">
+        <div className="week-nav" hidden={!courses.length}>
           <div className="segmented">
             <button className="icon-button" type="button" aria-label="上一周" disabled={viewWeek <= 1} onClick={() => onWeekChange(viewWeek - 1)}><ChevronLeft /></button>
-            <span className="week-readout">第 {viewWeek} / {meta.totalWeeks} 周</span>
+            <select className="week-select" aria-label="选择教学周" value={viewWeek} onChange={(event) => onWeekChange(Number(event.target.value))}>{Array.from({ length: meta.totalWeeks }, (_, index) => <option key={index + 1} value={index + 1}>第 {index + 1} 周{index + 1 === currentWeek ? " · 本周" : ""}</option>)}</select>
             <button className="icon-button" type="button" aria-label="下一周" disabled={viewWeek >= meta.totalWeeks} onClick={() => onWeekChange(viewWeek + 1)}><ChevronRight /></button>
           </div>
-          <button className="status-pill" type="button" onClick={onToday}>{currentWeek === viewWeek ? `今天 ${todayCount} 门` : '回到本周'}</button>
+          <button className="status-pill" type="button" disabled={currentWeek === viewWeek} onClick={onToday}>{currentWeek === viewWeek ? '当前周' : '回到本周'}</button>
         </div>
       </div>
 
       <div className="panel-card reveal is-in">
-        {weekCount === 0 && <div className="schedule-empty" role="status"><strong>{courses.length ? '这一周没有课程安排' : '你的课表，从这里开始'}</strong><p>{courses.length ? '可切换周次查看其他教学安排。' : '使用上方扫码同步或粘贴导入，添加你的第一份课表。'}</p></div>}
-        <div className="gridwrap" tabIndex={0} role="region" aria-label="每周课表，可左右滚动" aria-describedby="gridHint">
+        {weekCount === 0 && <div className="schedule-empty" role="status"><strong>{courses.length ? '这一周没有课程安排' : '你的课表，从这里开始'}</strong><p>{courses.length ? '可切换周次查看其他教学安排。' : '点击顶部「导入课表」，选择扫码、粘贴或照片识别。'}</p>{!courses.length && <button className="button primary" type="button" onClick={onImport}>导入课表</button>}</div>}
+        {weekCount > 0 && <><div className="gridwrap" tabIndex={0} role="region" aria-label="每周课表，可左右滚动" aria-describedby="gridHint">
           <table className="grid">
             <caption className="visually-hidden">第 {viewWeek} 周课表，{range}</caption>
             <thead>
@@ -120,8 +121,10 @@ export function ScheduleSection({
             </tbody>
           </table>
         </div>
-        <p className="grid-hint" id="gridHint">左右滑动查看完整一周 · 点按课程可查看详情</p>
+        <p className="grid-hint" id="gridHint">左右滑动查看完整一周 · 点按课程可查看详情</p></>}
       </div>
     </section>
   );
 }
+
+

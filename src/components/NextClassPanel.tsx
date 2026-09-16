@@ -1,3 +1,4 @@
+import { format } from 'date-fns';
 import { Clock3, MapPin, Users } from 'lucide-react';
 import { countdownParts, joinMeta } from '../lib/format';
 import { DAY_NAMES } from '../data/defaults';
@@ -24,14 +25,14 @@ export function NextClassPanel({ next, now, todayCount, weekCount, weekRange }: 
             <p className="nb-meta">
               {next && (
                 <>
-                  <span className="meta-item"><Clock3 />{DAY_NAMES[next.course.day]} 第 {next.course.slot} 节</span>
+                  <span className="meta-item"><Clock3 />{format(next.start, 'M月d日')} {DAY_NAMES[next.course.day]} · {format(next.start, 'HH:mm')}–{format(next.end, 'HH:mm')}</span>
                   <span className="meta-item"><MapPin />{next.course.room}</span>
                   <span className="meta-item"><Users />{next.course.clazz}</span>
                 </>
               )}
             </p>
           </div>
-          <div className="nb-count">
+          {next && <div className="nb-count">
             <p className="cd-label">距离开课</p>
             <p className="cd-value">
               {remaining ? (
@@ -41,7 +42,7 @@ export function NextClassPanel({ next, now, todayCount, weekCount, weekRange }: 
                 </>
               ) : '—'}
             </p>
-          </div>
+          </div>}
         </div>
         <div className="mini-stack">
           <div className="mini-card">
@@ -59,3 +60,5 @@ export function NextClassPanel({ next, now, todayCount, weekCount, weekRange }: 
     </div>
   );
 }
+
+

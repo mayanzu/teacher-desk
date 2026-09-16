@@ -773,3 +773,123 @@ body.reduce-transparency .mini-card {
   .grid { border-spacing: 7px; }
   .footer { margin: 0 14px; padding: 23px 0 28px; }
 }
+
+/* Editorial comic dashboard: group tasks, keep ink and halftone off body text. */
+body .product-nav-inner { max-width: 1400px; min-height: 72px; gap: 20px; }
+body .product-meta { gap: 12px; }
+body .nav-import { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; font-size: 14px; white-space: nowrap; }
+.nav-import svg { width: 18px; height: 18px; }
+body .product-meta .icon-button { width: 44px !important; height: 44px !important; }
+body .product-nav :focus-visible { outline-color: var(--yellow); }
+.comic-dashboard { grid-template-columns: minmax(280px, .8fr) minmax(0, 1.6fr); gap: 32px; align-items: stretch; }
+.comic-dashboard .hero-copy { padding: 22px; max-width: none; background: var(--paper-2); border: 3px solid var(--ink); border-radius: 16px; box-shadow: 5px 5px 0 var(--ink); text-align: left; position: relative; }
+.comic-kicker { display: inline-block; padding: 5px 8px; margin: -34px 0 16px; background: var(--ink); color: var(--yellow); font-size: 11px; font-weight: 900; letter-spacing: .08em; transform: rotate(-2deg); }
+.comic-dashboard .eyebrow { display: block; padding: 0; margin: 0 0 12px; background: transparent; border: 0; box-shadow: none; transform: none; color: var(--fg-2); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.comic-dashboard h1 { font-size: clamp(44px, 5vw, 72px); letter-spacing: -.035em; line-height: 1.1; text-shadow: 3px 3px 0 var(--yellow), 5px 5px 0 var(--ink); }
+.comic-dashboard .hero-description { margin-top: 16px; font-size: 14px; }
+.comic-dashboard .teacher-switcher { width: 100%; max-width: none; min-height: 56px; margin-top: 18px; border-width: 2px; box-shadow: 3px 3px 0 var(--ink); }
+.comic-dashboard .ts-label { font-size: 11px; line-height: 1.5; }
+.comic-dashboard .ts-name { font-size: 15px; line-height: 1.5; }
+.comic-dashboard .ts-action { font-size: 11px; }
+.schedule-jump { display: flex; align-items: center; justify-content: space-between; min-height: 44px; margin-top: 16px; padding: 8px 12px; border: 2px solid var(--ink); border-radius: 8px; background: var(--yellow); font-size: 14px; font-weight: 800; box-shadow: 3px 3px 0 var(--ink); }
+.schedule-jump:hover { transform: translateY(-2px); }
+.schedule-jump svg { width: 18px; height: 18px; }
+.comic-dashboard .stage { min-width: 0; }
+.comic-dashboard .stage::after { content: '下一课'; top: 8px; right: 12px; min-width: 0; min-height: 0; padding: 7px 10px; clip-path: none; border-radius: 6px; font-size: 12px; transform: rotate(4deg); z-index: 2; }
+.comic-dashboard .stage-inner { grid-template-columns: 1fr; padding: 30px 20px 20px; gap: 16px; }
+.comic-dashboard .next-card { min-width: 0; padding: 18px; gap: 14px; }
+.comic-dashboard .nb-body { flex: 1 1 220px; }
+.comic-dashboard .nb-name { font-size: clamp(22px, 2.4vw, 30px); line-height: 1.4; overflow-wrap: anywhere; }
+.comic-dashboard .nb-meta { font-size: 13px; line-height: 1.6; }
+.comic-dashboard .nb-count { width: 100%; margin: 0; padding: 12px 0 0; border-left: 0; border-top: 2px solid var(--ink); text-align: left; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.comic-dashboard .cd-label { font-size: 12px; letter-spacing: 0; }
+.comic-dashboard .cd-value { font-size: 30px; font-variant-numeric: tabular-nums; }
+.comic-dashboard .mini-stack { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.comic-dashboard .mini-card { min-height: 85px; padding: 12px 16px; }
+.comic-dashboard .mini-k, .comic-dashboard .mini-s { font-size: 12px; letter-spacing: 0; }
+.comic-dashboard .mini-v { font-size: 24px; }
+.section .week-select { min-height: 44px; max-width: 150px; border: 0; border-radius: 6px; padding: 8px 6px; background: var(--paper-2); color: var(--ink); font: 800 14px var(--font); cursor: pointer; }
+.section .week-nav .icon-button { min-width: 44px; min-height: 44px; }
+.section .status-pill { min-height: 44px; font-size: 13px; }
+.section .section-heading h2 { font-size: clamp(26px, 3vw, 36px); }
+.section .grid .cell-time { z-index: 3; }
+.section .grid .l-name { font-size: 15px; line-height: 1.5; }
+.section .grid .l-line, .section .grid .l-line.is-muted { font-size: 12px; line-height: 1.5; }
+.section .grid .l-line span { white-space: normal; overflow-wrap: anywhere; }
+.section .grid .l-time { font-size: 11px; }
+.section .grid .lesson { padding: 12px; gap: 5px; }
+.section .grid .lesson.is-past { opacity: 1; }
+.section .grid .lesson .l-live, .section .grid .lesson .lesson-more { position: static; align-self: flex-start; }
+.section .grid-hint { display: block; font-size: 12px; }
+.onboarding-app .onboarding-option { min-height: 90px; padding: 18px; }
+.onboarding-app .onboarding-option strong { font-size: 16px; }
+.onboarding-app .onboarding-option span { font-size: 13px; line-height: 1.7; }
+.onboarding-app .kapp-sub { font-size: 13px; }
+@media (max-width: 1040px) {
+  .comic-dashboard { grid-template-columns: minmax(230px, .8fr) minmax(0, 1.2fr); gap: 20px; }
+  .comic-dashboard .hero-copy { padding: 18px; }
+  .comic-dashboard .nb-body { flex-basis: 160px; }
+}
+@media (max-width: 760px) {
+  body .product-nav-inner { min-height: 64px; padding: 8px 14px; gap: 10px; flex-wrap: nowrap; }
+  body .product-meta { gap: 8px; }
+  .comic-dashboard { grid-template-columns: 1fr; padding: 28px 16px 0; gap: 22px; }
+  .comic-dashboard .hero-copy { padding: 18px; }
+  .comic-dashboard h1 { font-size: 48px; }
+  .comic-dashboard .stage-inner { padding: 26px 14px 14px; }
+  .comic-dashboard .nb-body { flex-basis: 180px; }
+  .comic-dashboard .nb-icon { width: 42px; height: 42px; }
+  .comic-dashboard .next-card { padding: 14px; }
+  .comic-dashboard .nb-name { font-size: 22px; }
+  .comic-dashboard .cd-value { font-size: 26px; }
+  .comic-dashboard .mini-card { padding: 12px; }
+  .section .week-nav { width: 100%; gap: 10px; }
+  .section .segmented { flex: 1; justify-content: space-between; }
+  .section .gridwrap { scrollbar-width: thin; }
+  .section .gridwrap::-webkit-scrollbar { display: block; height: 8px; }
+  body { padding-bottom: env(safe-area-inset-bottom); }
+}
+.onboarding-app .kapp-hint { margin-top: 18px; line-height: 1.7; font-size: 12px; }
+.onboarding-app .icon-button { min-width: 44px; min-height: 44px; }
+.comic-dashboard .stage::after { content: none; }
+@media (max-width: 760px) {
+  .comic-dashboard .hero-copy { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; }
+  .comic-dashboard .comic-kicker, .comic-dashboard .eyebrow, .comic-dashboard .teacher-switcher, .comic-dashboard .schedule-jump { grid-column: 1 / -1; }
+  .comic-dashboard .hero-description { align-self: center; text-align: right; margin-top: 0; font-size: 12px; }
+  .comic-dashboard h1 { font-size: clamp(32px, 10vw, 40px); white-space: nowrap; }
+}
+
+
+/* Course identity stays consistent across days and weeks. */
+.section .grid .lesson[data-course-color="0"] { background: var(--yellow-soft) !important; }
+.section .grid .lesson[data-course-color="1"] { background: var(--blue-soft) !important; }
+.section .grid .lesson[data-course-color="2"] { background: var(--green-soft) !important; }
+.section .grid .lesson[data-course-color="3"] { background: #f5a6a1 !important; }
+.section .grid .lesson[data-course-color="4"] { background: var(--purple-soft) !important; }
+.section .grid .lesson[data-course-color="5"] { background: var(--orange-soft) !important; }
+body.reduce-transparency .section .grid .lesson[data-course-color] { background: var(--paper-2) !important; }
+@media (prefers-reduced-transparency: reduce) {
+  .section .grid .lesson[data-course-color] { background: var(--paper-2) !important; }
+}
+.comic-dashboard.is-empty { grid-template-columns: 1fr; }
+.comic-dashboard.is-empty .hero-copy { max-width: 640px; width: 100%; }
+.schedule-empty .button { margin-top: 18px; }
+@media (max-width: 760px) {
+  .comic-dashboard { gap: 14px; padding-top: 16px; }
+  .comic-dashboard .hero-copy { padding: 12px 14px; }
+  .comic-dashboard .comic-kicker, .comic-dashboard .eyebrow, .comic-dashboard .schedule-jump { display: none; }
+  .comic-dashboard .teacher-switcher { margin-top: 10px; min-height: 46px; }
+  .comic-dashboard .stage-inner { padding: 10px; gap: 10px; }
+  .comic-dashboard .next-card { padding: 10px 12px; gap: 8px; }
+  .comic-dashboard .nb-icon { display: none; }
+  .comic-dashboard .nb-body { flex-basis: 100%; }
+  .comic-dashboard .nb-name { font-size: 18px; }
+  .comic-dashboard .nb-meta { margin-top: 4px; font-size: 12px; }
+  .comic-dashboard .nb-count { padding-top: 6px; }
+  .comic-dashboard .cd-value { font-size: 20px; margin-top: 0; }
+  .comic-dashboard .mini-stack { gap: 10px; }
+  .comic-dashboard .mini-card { min-height: 0; padding: 6px 10px; display: flex; align-items: baseline; gap: 8px; border-width: 2px; }
+  .comic-dashboard .mini-v { font-size: 18px; margin: 0; }
+  .comic-dashboard .mini-s { display: none; }
+  .section { padding-top: 24px; }
+}

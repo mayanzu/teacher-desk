@@ -34,6 +34,7 @@ export default function App() {
   const viewWeek = weekSelection?.profileId === activeProfile.id ? weekSelection.week : currentWeek;
   const setWeek = (week: number) => setWeekSelection({ profileId: activeProfile.id, week: Math.min(activeProfile.meta.totalWeeks, Math.max(1, week)) });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [teacherOpen, setTeacherOpen] = useState(false);
   const [academicSyncOpen, setAcademicSyncOpen] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
@@ -127,12 +128,9 @@ export default function App() {
     <>
       <AppHeader
         date={now}
-        week={viewWeek}
-        motionPaused={motionPaused}
-        onToggleMotion={toggleMotion}
-        onPhotoImport={() => setPhotoOpen(true)}
+
+        onImport={() => setImportOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
-        onToday={() => setWeek(currentWeek)}
       />
       <main id="main">
         <HeroSection
@@ -142,9 +140,8 @@ export default function App() {
           next={next}
           todayCount={todayCount}
           weekCount={weekCount}
+          hasCourses={courses.length > 0}
           onOpenTeacherManager={() => setTeacherOpen(true)}
-          onOpenAcademicSync={() => { setAcademicSyncOpen(true); academicSync.start(); }}
-          onOpenPasteImport={() => setPasteOpen(true)}
         />
         <ScheduleSection
           meta={meta}
@@ -156,14 +153,13 @@ export default function App() {
           onWeekChange={setWeek}
           onToday={() => setWeek(currentWeek)}
           onSelectCourses={setSelectedCourses}
+          onImport={() => setImportOpen(true)}
         />
       </main>
       <footer className="footer" id="data">
-        <div>
-          <p>作息依据安徽三联学院主校区时间表，已按课程教室所在楼栋自动匹配打铃时间。</p>
-          <p>数据保存在当前浏览器的教师档案中，可随时切换、导出或重新导入。</p>
+        <div className="footer-bottom">
           <p>快捷键：← / → 切换周次 · Esc 关闭面板。</p>
-          <div className="footer-bottom"><span>学期课表 · {meta.teacher}</span><a href="#top">回到顶部 ↑</a></div>
+          <a href="https://github.com/mayanzu/teacher-timetable" target="_blank" rel="noopener noreferrer">GitHub</a>
         </div>
       </footer>
 
@@ -186,11 +182,11 @@ export default function App() {
         onOpenAcademicSync={() => { setTeacherOpen(false); setAcademicSyncOpen(true); academicSync.start(); }}
       />
       <OnboardingDialog
-        open={needsOnboarding}
-        onClose={() => setOnboardingClosed(true)}
-        onAcademicSync={() => { setOnboardingClosed(true); setAcademicSyncOpen(true); academicSync.start(); }}
-        onPaste={() => { setOnboardingClosed(true); setPasteOpen(true); }}
-        onPhoto={() => { setOnboardingClosed(true); setPhotoOpen(true); }}
+        open={needsOnboarding || importOpen}
+        onClose={() => { setOnboardingClosed(true); setImportOpen(false); }}
+        onAcademicSync={() => { setOnboardingClosed(true); setImportOpen(false); setAcademicSyncOpen(true); academicSync.start(); }}
+        onPaste={() => { setOnboardingClosed(true); setImportOpen(false); setPasteOpen(true); }}
+        onPhoto={() => { setOnboardingClosed(true); setImportOpen(false); setPhotoOpen(true); }}
       />
       <AcademicSyncDialog
         open={academicSyncOpen}
@@ -222,3 +218,7 @@ export default function App() {
     </>
   );
 }
+
+
+
+

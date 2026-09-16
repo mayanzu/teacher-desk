@@ -15,6 +15,7 @@ export function LessonCard({ course, start, end, live, past, extraCount, onClick
   return (
     <button
       className={'lesson' + (live ? ' is-live' : '') + (past ? ' is-past' : '')}
+      data-course-color={Array.from(course.name.trim()).reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) % 6, 0)}
       type="button"
       onClick={onClick}
       aria-label={`${course.name}，${start} 至 ${end}，${course.room}`}
@@ -31,3 +32,4 @@ export function LessonCard({ course, start, end, live, past, extraCount, onClick
     </button>
   );
 }
+

@@ -15,10 +15,10 @@ export function OnboardingDialog({ open, onClose, onAcademicSync, onPaste, onPho
     <dialog ref={ref} className="kapp onboarding-app" aria-labelledby="onboardingTitle">
       <header className="kapp-head">
         <div>
-          <h2 id="onboardingTitle">欢迎使用学期课表</h2>
-          <p className="kapp-sub">还没有课表数据，先导入你的课表吧</p>
+          <h2 id="onboardingTitle">导入你的课表</h2>
+          <p className="kapp-sub">选择与你手头资料对应的导入方式</p>
         </div>
-        <button className="icon-button" type="button" aria-label="稍后再说" onClick={onClose}><X /></button>
+        <button className="icon-button" type="button" aria-label="关闭导入方式" onClick={onClose}><X /></button>
       </header>
       <div className="kapp-body">
         <div className="onboarding-options">
@@ -43,3 +43,4 @@ export function OnboardingDialog({ open, onClose, onAcademicSync, onPaste, onPho
     </dialog>
   );
 }
+

@@ -1,49 +1,25 @@
-import { Camera, Pause, Play, Settings2 } from 'lucide-react';
-import { formatClock, formatDate } from '../lib/date';
+import { Download, Settings2 } from 'lucide-react';
+import { formatDate } from '../lib/date';
 
 interface AppHeaderProps {
   date: Date;
-  week: number;
-  motionPaused: boolean;
-  onToggleMotion: () => void;
-  onPhotoImport: () => void;
+  onImport: () => void;
   onOpenSettings: () => void;
-  onToday: () => void;
 }
 
-export function AppHeader({
-  date,
-  week,
-  motionPaused,
-  onToggleMotion,
-  onPhotoImport,
-  onOpenSettings,
-  onToday,
-}: AppHeaderProps) {
+export function AppHeader({ date, onImport, onOpenSettings }: AppHeaderProps) {
   return (
     <nav className="product-nav" aria-label="页面导航">
       <div className="product-nav-inner">
         <a className="product-name" href="#top">学期课表</a>
-        <div className="product-links">
-          <a href="#schedule">本周课表</a>
-          <a href="#data">数据说明</a>
-        </div>
+        <div className="product-links"><a href="#schedule">查看课表</a><a href="https://github.com/mayanzu/teacher-timetable" target="_blank" rel="noopener noreferrer">GitHub</a></div>
         <div className="product-meta">
           <span className="ns-date">{formatDate(date)}</span>
-          <span className="ns-clock">{formatClock(date)}</span>
-          <span className="nav-pill">第 {week} 教学周</span>
-          <button className="nav-cta" type="button" onClick={onToday}>回到本周</button>
-          <button className="icon-button" id="motionToggle" type="button" aria-label={motionPaused ? '恢复动态效果' : '暂停动态效果'} onClick={onToggleMotion}>
-            {motionPaused ? <Play /> : <Pause />}
-          </button>
-          <button className="icon-button" type="button" aria-label="用照片导入课表" onClick={onPhotoImport}>
-            <Camera />
-          </button>
-          <button className="icon-button" type="button" aria-label="打开设置" onClick={onOpenSettings}>
-            <Settings2 />
-          </button>
+          <button className="nav-cta nav-import" type="button" onClick={onImport}><Download aria-hidden="true" />导入课表</button>
+          <button className="icon-button" type="button" aria-label="打开设置" title="设置与提醒" onClick={onOpenSettings}><Settings2 /></button>
         </div>
       </div>
     </nav>
   );
 }
+

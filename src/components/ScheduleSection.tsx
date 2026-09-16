@@ -1,4 +1,5 @@
 import { addDays } from 'date-fns';
+import { useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { DAY_NAMES } from '../data/defaults';
 import { currentWeekNumber, formatMonthDay, weekMonday } from '../lib/date';
@@ -29,6 +30,19 @@ export function ScheduleSection({
   onToday,
   onSelectCourses,
 }: ScheduleSectionProps) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || document.querySelector('dialog[open]')) return;
+      if (target instanceof HTMLElement && target.closest('input, textarea, select, button, a, [contenteditable="true"], .gridwrap')) return;
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        onWeekChange(Math.min(meta.totalWeeks, Math.max(1, viewWeek + (event.key === 'ArrowLeft' ? -1 : 1))));
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [meta.totalWeeks, onWeekChange, viewWeek]);
   const currentWeek = currentWeekNumber(meta.semesterStart, meta.totalWeeks, now);
   const today = now.getDay() || 7;
   const slots = ['1-2', '3-4', '5-6', '7-8', ...(courses.some((course) => /^(9|11)-/.test(course.slot)) ? ['9-10', '11-12'] : [])];
@@ -50,16 +64,17 @@ export function ScheduleSection({
         </div>
         <div className="week-nav">
           <div className="segmented">
-            <button className="icon-button" type="button" aria-label="上一周" onClick={() => onWeekChange(viewWeek - 1)}><ChevronLeft /></button>
+            <button className="icon-button" type="button" aria-label="上一周" disabled={viewWeek <= 1} onClick={() => onWeekChange(viewWeek - 1)}><ChevronLeft /></button>
             <span className="week-readout">第 {viewWeek} / {meta.totalWeeks} 周</span>
-            <button className="icon-button" type="button" aria-label="下一周" onClick={() => onWeekChange(viewWeek + 1)}><ChevronRight /></button>
+            <button className="icon-button" type="button" aria-label="下一周" disabled={viewWeek >= meta.totalWeeks} onClick={() => onWeekChange(viewWeek + 1)}><ChevronRight /></button>
           </div>
-          <button className="status-pill" type="button" onClick={onToday}>今天 {currentWeek === viewWeek ? todayCount : 0} 门</button>
+          <button className="status-pill" type="button" onClick={onToday}>{currentWeek === viewWeek ? `今天 ${todayCount} 门` : '回到本周'}</button>
         </div>
       </div>
 
       <div className="panel-card glass reveal is-in">
-        <div className="gridwrap">
+        {weekCount === 0 && <div className="schedule-empty" role="status"><strong>{courses.length ? '这一周没有课程安排' : '你的课表，从这里开始'}</strong><p>{courses.length ? '可切换周次查看其他教学安排。' : '使用上方扫码同步或粘贴导入，添加你的第一份课表。'}</p></div>}
+        <div className="gridwrap" tabIndex={0} role="region" aria-label="每周课表，可左右滚动" aria-describedby="gridHint">
           <table className="grid">
             <caption className="visually-hidden">第 {viewWeek} 周课表，{range}</caption>
             <thead>
@@ -105,7 +120,7 @@ export function ScheduleSection({
             </tbody>
           </table>
         </div>
-        <p className="grid-hint">左右滑动查看完整一周 · 点按课程可查看详情</p>
+        <p className="grid-hint" id="gridHint">左右滑动查看完整一周 · 点按课程可查看详情</p>
       </div>
     </section>
   );

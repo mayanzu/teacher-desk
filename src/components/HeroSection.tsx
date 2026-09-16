@@ -41,7 +41,7 @@ export function HeroSection({
         </button>
         <button className="paste-secondary" type="button" onClick={onOpenPasteImport}>
           <ClipboardPaste aria-hidden="true" />
-          粘贴课表作为备用
+          粘贴导入课表
         </button>
       </div>
       <NextClassPanel next={next} now={now} todayCount={todayCount} weekCount={weekCount} weekRange={range} />

@@ -20,7 +20,7 @@ export function NextClassPanel({ next, now, todayCount, weekCount, weekRange }: 
           <span className="nb-icon" aria-hidden="true"><Clock3 /></span>
           <div className="nb-body">
             <p className="nb-label">下一节课</p>
-            <p className="nb-name">{next?.course.name || '本周暂无课程'}</p>
+            <p className="nb-name">{next?.course.name || '暂无待上课程'}</p>
             <p className="nb-meta">
               {next && (
                 <>
@@ -50,7 +50,7 @@ export function NextClassPanel({ next, now, todayCount, weekCount, weekRange }: 
             <p className="mini-s">{joinMeta([DAY_NAMES[now.getDay() || 7], todayCount ? '好好上课' : '轻松一天'])}</p>
           </div>
           <div className="mini-card glass">
-            <p className="mini-k">本周</p>
+            <p className="mini-k">所选周</p>
             <p className="mini-v">{weekCount} 门次</p>
             <p className="mini-s">{weekRange}</p>
           </div>

@@ -10,6 +10,7 @@
 .academic-sync-copy>p{margin:7px 0 0;color:#625c66;font-size:12px;line-height:1.7;font-weight:700}
 .academic-sync-steps{display:grid;grid-template-columns:1fr;gap:7px;margin-top:14px}
 .academic-sync-steps span{padding:8px 10px;color:#1c1c22;background:#fff3a9;border:2px solid #1c1c22;border-radius:9px;font-size:11px;font-weight:900;text-align:left}
+.academic-sync-note{margin:10px 0 0;padding:8px 10px;color:#8a2b22;background:#ffe8e4;border:2px solid #e5483c;border-radius:9px;font-size:11px;font-weight:800;line-height:1.6}
 .academic-sync-status{display:flex;align-items:center;gap:9px;margin-top:14px;padding:11px 13px;border:2px solid #1c1c22;border-radius:10px;font-size:12.5px;font-weight:850}
 .academic-sync-status svg{width:18px;height:18px;flex:none}
 .academic-sync-status.is-waiting{background:#d9eff8}

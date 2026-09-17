@@ -20,7 +20,7 @@ export function AcademicSyncDialog({ open, status, message, qrCodeValue, onStart
       <header className="kapp-head">
         <div>
           <h2 id="academicSyncTitle">扫码同步教务课表</h2>
-          <p className="kapp-sub">无需安装插件，不保存账号密码</p>
+          <p className="kapp-sub">请打开「喜鹊儿」App → 扫一扫（无需安装插件，不保存账号密码）</p>
         </div>
         <button className="icon-button" type="button" aria-label="关闭" onClick={onClose}><X /></button>
       </header>
@@ -31,13 +31,14 @@ export function AcademicSyncDialog({ open, status, message, qrCodeValue, onStart
             <span>{status === 'waiting' ? '二维码有效期约 5 分钟' : '点击下方按钮生成二维码'}</span>
           </div>
           <div className="academic-sync-copy">
-            <h3>手机扫码，自动同步本学期课表</h3>
-            <p>使用学校教务系统支持的手机端扫码登录。后端会在教务域名内完成会话轮询，成功后将课表安全传给课表系统。</p>
+            <h3>用「喜鹊儿」App 扫码，自动同步本学期课表</h3>
+            <p>教务系统的扫码登录由「喜鹊儿」App 提供，微信、系统相机等其它扫码工具无法识别。打开喜鹊儿扫一扫，在教务端确认后即可自动读取本学期课表。</p>
             <div className="academic-sync-steps">
-              <span>① 手机扫码</span>
+              <span>① 打开喜鹊儿扫一扫</span>
               <span>② 教务端确认登录</span>
               <span>③ 自动保存教师档案</span>
             </div>
+            <p className="academic-sync-note">扫码后无反应？请确认使用的是「喜鹊儿」App，而不是微信或系统相机。</p>
             {status !== 'idle' && (
               <div className={'academic-sync-status is-' + status} role="status" aria-live="polite">
                 {status === 'success' ? <CheckCircle2 /> : status === 'error' ? <TriangleAlert /> : <QrCode />}

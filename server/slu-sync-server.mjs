@@ -216,7 +216,7 @@ async function startSession(ip) {
     qrCode: qrCodeValue(),
     cookies: new Map(),
     status: 'waiting',
-    message: '等待手机扫码',
+    message: '等待使用「喜鹊儿」App 扫码',
     updatedAt: Date.now(),
     polling: null,
     ip,
@@ -324,7 +324,7 @@ async function pollSession(session) {
   const username = (await readText(response)).trim();
   if (!username) {
     session.updatedAt = Date.now();
-    return { status: 'waiting', message: '等待手机扫码' };
+    return { status: 'waiting', message: '等待使用「喜鹊儿」App 扫码' };
   }
   const result = await completeLogin(session, username);
   session.status = 'success';

@@ -54,7 +54,7 @@ export function useAcademicSync({ onImported }: AcademicSyncOptions) {
       failCountRef.current = 0;
       const result = parsed.data;
       if (result.status === 'waiting') {
-        setMessage(result.message || '等待手机扫码…');
+        setMessage(result.message || '等待使用「喜鹊儿」App 扫码…');
         timerRef.current = window.setTimeout(() => void pollRef.current(sessionId), 1500);
         return;
       }
@@ -104,7 +104,7 @@ export function useAcademicSync({ onImported }: AcademicSyncOptions) {
       expiresRef.current = data.expiresIn;
       sessionRef.current = data.session;
       setQrCodeValue(data.qrCode);
-      setMessage('请使用手机扫码并在教务系统确认登录…');
+      setMessage('请打开「喜鹊儿」App 扫码，并在教务系统确认登录…');
       timerRef.current = window.setTimeout(() => void pollRef.current(data.session), 1200);
     } catch (error) {
       if (!mountedRef.current) return;

@@ -24,7 +24,7 @@ export function OnboardingDialog({ open, onClose, onAcademicSync, onPaste }: Onb
           <button className="onboarding-option" type="button" onClick={onAcademicSync}>
             <QrCode aria-hidden="true" />
             <strong>扫码同步教务课表</strong>
-            <span>手机扫码登录教务系统，自动读取并保存本学期课表</span>
+            <span>打开「喜鹊儿」App 扫码登录教务系统，自动读取并保存本学期课表</span>
           </button>
           <button className="onboarding-option" type="button" onClick={onPaste}>
             <ClipboardPaste aria-hidden="true" />

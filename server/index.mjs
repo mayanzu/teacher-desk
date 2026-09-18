@@ -171,7 +171,7 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === '/api/terms' && req.method === 'GET') {
       const s = await ensureSession(ctx);
-      const terms = await cached('terms', () => getTerms(s));
+      const terms = await cached(ctx, 'terms', () => getTerms(s));
       return json(res, 200, { terms, current: terms[0]?.value || '' });
     }
 
@@ -450,7 +450,7 @@ const server = createServer(async (req, res) => {
       }
       let termLabel = '';
       try {
-        const terms = await cached('terms', () => getTerms(s));
+      const terms = await cached(ctx, 'terms', () => getTerms(s));
         termLabel = terms.find((item) => item.value === term)?.label || '';
       } catch {
         termLabel = '';

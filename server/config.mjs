@@ -1,7 +1,17 @@
 import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = process.env.APP_ROOT || fileURLToPath(new URL('../', import.meta.url));
+function defaultRoot() {
+  try {
+    return fileURLToPath(new URL('../', import.meta.url));
+  } catch {
+    // CJS/SEA 打包后 import.meta.url 不可用；调用方应显式设置 APP_ROOT
+    return process.cwd();
+  }
+}
+
+const root = process.env.APP_ROOT || defaultRoot();
 
 function loadEnvFile(path) {
   if (!existsSync(path)) return;
@@ -16,7 +26,7 @@ function loadEnvFile(path) {
   }
 }
 
-loadEnvFile(`${root}.env`);
+loadEnvFile(join(root, '.env'));
 
 const num = (value, fallback) => {
   const parsed = Number(value);
@@ -29,7 +39,7 @@ export const config = {
   port: num(process.env.PORT, 8790),
   qrTimeoutMs: num(process.env.JWXT_QR_TIMEOUT_MS, 5 * 60 * 1000),
   pollMs: num(process.env.JWXT_POLL_MS, 2000),
-  sessionDir: process.env.SESSION_DIR || `${root}.sessions/`,
+  sessionDir: process.env.SESSION_DIR || join(root, '.sessions'),
   root,
 };
 

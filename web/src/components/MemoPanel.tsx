@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import { ClipboardList } from './Icons';
 
 const STORAGE_KEY = 'teacher-desk:memo:v2';
-const LEGACY_KEY = 'teacher-desk:memo';
+
 const COLORS = 6;
 const TILTS = ['-2.4deg', '1.8deg', '-1.3deg', '2.6deg', '-2deg', '1.2deg'];
 
@@ -34,18 +34,15 @@ function normalize(raw: unknown, index: number): MemoNote | null {
   };
 }
 
-function loadNotes(): MemoNote[] {
+function loadNotes(storageKey: string): MemoNote[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         return parsed.map(normalize).filter((note): note is MemoNote => note !== null);
       }
     }
-    // 旧版单条备忘录迁移成一张便利贴
-    const legacy = localStorage.getItem(LEGACY_KEY);
-    if (legacy && legacy.trim()) return [{ id: uid(), text: legacy, color: 0, done: false }];
   } catch {
     /* ignore */
   }
@@ -58,26 +55,35 @@ function tiltOf(id: string): string {
   return TILTS[hash % TILTS.length];
 }
 
-export function MemoPanel() {
-  const [notes, setNotes] = useState<MemoNote[]>(loadNotes);
+export function MemoPanel({ userId }: { userId: string }) {
+  const storageKey = `${STORAGE_KEY}:${encodeURIComponent(userId)}`;
+  const [notes, setNotes] = useState<MemoNote[]>(() => loadNotes(storageKey));
   const [draft, setDraft] = useState('');
   const [tearing, setTearing] = useState<string[]>([]);
-  const timer = useRef<number | null>(null);
+  const [storageError, setStorageError] = useState('');
+  const tearTimers = useRef(new Map<string, number>());
+  const tearingRef = useRef<string[]>([]);
+
+  const persist = (list: MemoNote[]) => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(list));
+      setStorageError('');
+    } catch {
+      setStorageError('便利贴无法保存到浏览器，请复制内容备份。');
+    }
+  };
 
   useEffect(() => {
-    if (timer.current !== null) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
-        localStorage.removeItem(LEGACY_KEY);
-      } catch {
-        /* 本地存储不可用时忽略 */
-      }
-    }, 400);
-    return () => {
-      if (timer.current !== null) window.clearTimeout(timer.current);
-    };
-  }, [notes]);
+    persist(notes.filter((note) => !tearingRef.current.includes(note.id)));
+  }, [notes, storageKey]);
+
+  useEffect(
+    () => () => {
+      for (const timer of tearTimers.current.values()) window.clearTimeout(timer);
+      tearTimers.current.clear();
+    },
+    [],
+  );
 
   const add = () => {
     const text = draft.trim();
@@ -92,15 +98,22 @@ export function MemoPanel() {
 
   const tear = (id: string) => {
     if (tearing.includes(id)) return;
+    const remaining = notes.filter((note) => note.id !== id);
+    persist(remaining);
+    tearingRef.current = [...tearingRef.current, id];
     setTearing((list) => [...list, id]);
-    window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
+      tearTimers.current.delete(id);
+      tearingRef.current = tearingRef.current.filter((item) => item !== id);
       setNotes((list) => list.filter((note) => note.id !== id));
       setTearing((list) => list.filter((item) => item !== id));
     }, 340);
+    tearTimers.current.set(id, timer);
   };
 
   return (
     <section className="memo-panel" aria-label="便利贴">
+      {storageError && <p role="alert">{storageError}</p>}
       <div className="memo-board-head">
         <h2>
           <ClipboardList aria-hidden="true" />
@@ -120,7 +133,7 @@ export function MemoPanel() {
             aria-label="新建便利贴"
             maxLength={200}
           />
-          <button type="submit" disabled={!draft.trim()}>
+          <button className="kbtn primary" type="submit" disabled={!draft.trim()}>
             贴上
           </button>
         </form>

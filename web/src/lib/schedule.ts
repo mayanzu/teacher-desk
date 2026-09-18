@@ -72,8 +72,12 @@ export function courseColor(name: string): number {
 }
 
 export function activeSlots(courses: Course[]): string[] {
-  const present = new Set(courses.map((course) => course.slot));
-  return [...BASE_SLOTS, ...NIGHT_SLOTS.filter((slot) => present.has(slot))];
+  const present = new Set(courses.map((course) => course.slot).filter(Boolean));
+  const base = [...BASE_SLOTS, ...NIGHT_SLOTS.filter((slot) => present.has(slot))];
+  const extra = [...present]
+    .filter((slot) => !base.includes(slot))
+    .sort((a, b) => Number(String(a).split('-')[0]) - Number(String(b).split('-')[0]));
+  return [...base, ...extra];
 }
 
 export function activeDays(courses: Course[]): number[] {
@@ -89,12 +93,13 @@ function mondayOf(date: Date): Date {
 }
 
 export function termStart(term: string): Date | null {
-  const [rawYear, rawTerm] = String(term ?? '').split(',');
-  const year = Number(rawYear);
-  const index = Number(rawTerm);
-  if (!Number.isFinite(year) || year < 2000 || !Number.isFinite(index)) return null;
+  const match = /^(\d{4}),([01])$/.exec(String(term ?? ''));
+  if (!match) return null;
+  const year = Number(match[1]);
+  const index = Number(match[2]);
+  if (!Number.isFinite(year) || year < 2000) return null;
   // 0 = 第一学期（当年 9 月），1 = 第二学期（次年 2 月）
-  const anchor = index === 0 ? new Date(year, 8, 1) : new Date(year + 1, 1, 20);
+  const anchor = index === 0 ? new Date(year, 8, 1) : new Date(year + 1, 1, 1);
   return mondayOf(anchor);
 }
 
@@ -136,10 +141,10 @@ export function fallbackTerms(now: Date = new Date()): { terms: Term[]; current:
   const terms: Term[] = [];
   for (let offset = 0; offset < 2; offset += 1) {
     const year = startYear - offset;
-    terms.push({ value: `${year},1`, label: `${year}—${year + 1}学年 第一学期` });
-    terms.push({ value: `${year},2`, label: `${year}—${year + 1}学年 第二学期` });
+    terms.push({ value: `${year},0`, label: `${year}—${year + 1}学年 第一学期` });
+    terms.push({ value: `${year},1`, label: `${year}—${year + 1}学年 第二学期` });
   }
-  return { terms, current: month >= 8 ? `${startYear},1` : `${startYear},2` };
+  return { terms, current: month >= 8 ? `${startYear},0` : `${startYear},1` };
 }
 
 export function todayIndex(now: Date = new Date()): number {
@@ -221,7 +226,8 @@ export function nextCourseInstance(
     if (candidates.length) break;
   }
   candidates.sort((a, b) => a.start.getTime() - b.start.getTime());
-  return candidates.find((item) => item.start.getTime() > now.getTime()) ?? candidates[0] ?? null;
+  const live = candidates.find((item) => item.start.getTime() <= now.getTime() && now.getTime() <= item.end.getTime());
+  return live ?? candidates[0] ?? null;
 }
 
 export interface CountdownParts {
@@ -273,6 +279,6 @@ export function daysUntil(target: Date | null, now: Date = new Date()): number |
 export function semesterLabel(xn?: number, xq?: number): string {
   if (!Number.isFinite(xn) || !xn) return '';
   const year = Number(xn);
-  const half = xq === 1 ? '第二' : '第一';
-  return `${year}–${year + 1}学年 ${half}学期`;
+  if (xq !== 0 && xq !== 1) return `${year}–${year + 1}学年`;
+  return `${year}–${year + 1}学年 ${xq === 1 ? '第二' : '第一'}学期`;
 }

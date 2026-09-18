@@ -31,14 +31,13 @@ export function AppHeader({ username, terms, term, onTermChange, page, onPageCha
             <GraduationCap aria-hidden="true" />
             教师工作台
           </span>
-          <div className="product-links" role="tablist" aria-label="功能切换">
+          <div className="product-links" role="group" aria-label="功能切换">
             {PAGES.map((item) => (
               <button
                 key={item.key}
                 className={'product-link' + (page === item.key ? ' active' : '')}
                 type="button"
-                role="tab"
-                aria-selected={page === item.key}
+                aria-current={page === item.key ? 'page' : undefined}
                 onClick={() => onPageChange(item.key)}
               >
                 {item.label}

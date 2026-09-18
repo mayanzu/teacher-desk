@@ -33,13 +33,15 @@ export function createLoginFlow() {
   let session = new JwxtSession();
   const state = { status: 'idle', message: '', username: '', qrCode: '', qrDataUrl: '', expiresAt: 0 };
   let timer = null;
+  let generation = 0;
 
   const stop = () => {
     if (timer) clearTimeout(timer);
     timer = null;
   };
 
-  async function poll() {
+  async function poll(token = generation, activeSession = session, qrCode = state.qrCode) {
+    if (token !== generation) return;
     if (state.status !== 'waiting') return;
     if (Date.now() > state.expiresAt) {
       state.status = 'error';
@@ -47,16 +49,19 @@ export function createLoginFlow() {
       return stop();
     }
     try {
-      const res = await session.postForm('/ahsljw/frame/LoginBar.jsp', { operate: 'query', qrCode: state.qrCode });
+      const res = await activeSession.postForm('/ahsljw/frame/LoginBar.jsp', { operate: 'query', qrCode });
+      if (token !== generation) return;
       const username = res.text.trim();
       if (username) {
         state.message = '已扫码，正在登录…';
         try {
-          await completeQrLogin(session, state.qrCode, username);
+          await completeQrLogin(activeSession, qrCode, username);
+          if (token !== generation) return;
           state.status = 'success';
           state.username = username;
           state.message = '登录成功';
         } catch (error) {
+          if (token !== generation) return;
           state.status = 'error';
           state.message = error instanceof Error ? error.message : '登录失败';
         }
@@ -64,27 +69,35 @@ export function createLoginFlow() {
       }
       state.message = '等待使用「喜鹊儿」App 扫码…';
     } catch (error) {
+      if (token !== generation) return;
       state.message = `状态查询失败：${error instanceof Error ? error.message : error}`;
     }
-    timer = setTimeout(poll, config.pollMs);
+    if (token === generation) timer = setTimeout(() => poll(token, activeSession, qrCode), config.pollMs);
   }
 
   async function start() {
     stop();
+    const token = ++generation;
+    state.status = 'starting';
     // 每次生成二维码都使用全新会话，避免复用上一次的登录态导致登录失败
     session = new JwxtSession();
-    const page = await session.text('/ahsljw/cas/login.action');
+    const activeSession = session;
+    const page = await activeSession.text('/ahsljw/cas/login.action');
+    if (token !== generation) throw Object.assign(new Error('登录请求已取消'), { status: 409 });
     if (page.status !== 200) throw new Error(`无法打开登录页：HTTP ${page.status}`);
     state.qrCode = `smdljwxt${randomBytes(16).toString('hex')}`;
-    state.qrDataUrl = await QRCode.toDataURL(state.qrCode, { margin: 1, width: 480 });
+    const qrDataUrl = await QRCode.toDataURL(state.qrCode, { margin: 1, width: 480 });
+    if (token !== generation) throw Object.assign(new Error('登录请求已取消'), { status: 409 });
+    state.qrDataUrl = qrDataUrl;
     state.status = 'waiting';
     state.message = '等待使用「喜鹊儿」App 扫码…';
     state.expiresAt = Date.now() + config.qrTimeoutMs;
-    timer = setTimeout(poll, 1200);
+    timer = setTimeout(() => poll(token, activeSession, state.qrCode), 1200);
     return { qrDataUrl: state.qrDataUrl, expiresIn: Math.floor(config.qrTimeoutMs / 1000) };
   }
 
   const reset = () => {
+    ++generation;
     stop();
     session = new JwxtSession();
     state.status = 'idle';

@@ -3,6 +3,11 @@ web/dist
 web/node_modules
 *.log
 .session.json
+.sessions
+build
+tests
+tools
+.github
 .env
 .env.*
 .git

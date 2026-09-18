@@ -13,6 +13,8 @@ export interface Course {
 }
 
 export interface ScheduleData {
+  calendarEstimated?: boolean;
+  timesEstimated?: boolean;
   xn: number;
   xq: number;
   term?: string;
@@ -171,8 +173,14 @@ export interface ProgressSummaryGroup {
   rows: ProgressSummaryRow[];
 }
 
+export interface ProgressSummaryFailure {
+  className: string;
+  message: string;
+}
+
 export interface ProgressSummaryData {
   items: ProgressSummaryGroup[];
+  failures?: ProgressSummaryFailure[];
 }
 
 export interface RosterClass {

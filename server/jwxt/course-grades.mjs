@@ -1,4 +1,4 @@
-import { clean, parseTerm } from './common.mjs';
+import { clean, parseTerm, requireDownload, doubleEncode, safeFileName, requirePage } from './common.mjs';
 
 const COURSE_GRADE_LIST_TABLE = '5013';
 const COURSE_GRADE_LIST_PAGE = 'cjlr.ckxscj.fkcaxzbjckcj.html?menucode=T30304';
@@ -37,6 +37,7 @@ export async function getCourseGradeClasses(session, term) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
     body: `xn=${xn}&xn1=${xn}&xq=${xq}&xq_m=${xq}&hidKey=&hidOption=QRY`,
   });
+  requirePage(res, /doPrint\s*\(|暂无|无记录|没有/, '课程成绩列表');
   const items = [];
   const trRe = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
   let tr;
@@ -117,18 +118,26 @@ export async function getCourseGradesReport(session, params) {
     const tableGrid = parseTableGrid(table);
     const headerIndex = tableGrid.findIndex((row) => row.some((cell) => cell.text === '学号'));
     if (headerIndex < 0) continue;
-    const dataStart = tableGrid.findIndex((row, index) => index > headerIndex && /^\d+$/.test((row[0]?.text ?? '').trim()));
+    const idColumn = tableGrid[headerIndex].findIndex((cell) => cell.text === '学号');
+    // 数据起始行：表头之后第一个“学号列非空”的行（兼容 rowspan 合并单元格与字母学号）
+    const dataStart = tableGrid.findIndex(
+      (row, index) =>
+        index > headerIndex &&
+        row.some((cell) => cell.text !== '') &&
+        String(row[idColumn]?.text ?? '').trim() !== '' &&
+        String(row[idColumn]?.text ?? '').trim() !== '学号',
+    );
     const end = dataStart < 0 ? tableGrid.length : dataStart;
     header = tableGrid.slice(headerIndex, end);
     for (let index = end; index < tableGrid.length; index += 1) {
       const row = tableGrid[index];
       if (!row.some((cell) => cell.text !== '')) continue;
-      if (!/^\d+$/.test((row[0]?.text ?? '').trim())) continue;
       rows.push(row.map((cell) => cell.text));
     }
     break;
   }
 
+  if (!header.length) throw Object.assign(new Error('成绩页面结构异常，请稍后重试'), { status: 502 });
   return {
     term: params.term,
     kcdm: params.kcdm,
@@ -141,15 +150,6 @@ export async function getCourseGradesReport(session, params) {
     rows,
     empty: rows.length === 0,
   };
-}
-
-function doubleEncode(value) {
-  return encodeURIComponent(encodeURIComponent(String(value ?? '')));
-}
-
-function safeFileName(value, fallback) {
-  const name = String(value ?? '').replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^_+|_+$/g, '');
-  return name || fallback;
 }
 
 export async function exportCourseGradesPdf(session, params) {
@@ -187,7 +187,7 @@ export async function exportCourseGradesPdf(session, params) {
   }
   const [fileName, fileSavePath] = String(data.result).split(';;');
   const dl = await session.request(
-    `/ahsljw/frame/pdf?method=download&title=${doubleEncode(fileName)}&fileSavePath=${fileSavePath}`,
+    `/ahsljw/frame/pdf?method=download&title=${doubleEncode(fileName)}&fileSavePath=${encodeURIComponent(fileSavePath)}`,
     { method: 'GET', referer: `${session.base}/ahsljw/frame/pdf?method=topdf` },
   );
 
@@ -207,7 +207,7 @@ export async function exportCourseGradesPdf(session, params) {
     flag === '2' ? '有效成绩' : '原始成绩',
   ].filter(Boolean);
   const filename = parts.length > 1 ? `${parts.join('_')}.pdf` : `${safeFileName(params.fileName, '成绩')}.pdf`;
-  return { filename, buffer: dl.buffer };
+  return { filename, buffer: requireDownload(dl, 'pdf') };
 }
 
 export async function exportCourseGradesExcel(session, params) {
@@ -217,6 +217,6 @@ export async function exportCourseGradesExcel(session, params) {
     method: 'GET',
     referer: `${session.base}/ahsljw/wjstgdfw/${COURSE_GRADE_REPORT_PAGE}`,
   });
-  return { filename: `${safeFileName(params.fileName, '成绩')}.xls`, buffer: res.buffer };
+  return { filename: `${safeFileName(params.fileName, '成绩')}.xls`, buffer: requireDownload(res, 'xls') };
 }
 

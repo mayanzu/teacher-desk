@@ -23,12 +23,27 @@ function encode(value) {
   return out;
 }
 
+const NAMED_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+
+function decodeEntities(text) {
+  return String(text ?? '').replace(/&(#[xX]?[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, code) => {
+    if (code[0] === '#') {
+      const hex = code[1] === 'x' || code[1] === 'X';
+      const value = Number.parseInt(hex ? code.slice(2) : code.slice(1), hex ? 16 : 10);
+      return Number.isFinite(value) && value > 0 && value <= 0x10ffff ? String.fromCodePoint(value) : match;
+    }
+    return NAMED_ENTITIES[code.toLowerCase()] ?? match;
+  });
+}
+
 export function clean(value) {
-  return String(value ?? '')
-    .replace(/<\s*br\s*\/?>/gi, '\n')
-    .replace(/&nbsp;|&#160;|&ensp;|&emsp;|&#8194;|&#8195;/gi, ' ')
-    .replace(/[\u00a0\u3000]/g, ' ')
-    .replace(/<[^>]*>/g, '')
+  return decodeEntities(
+    String(value ?? '')
+      .replace(/<\s*br\s*\/?>/gi, '\n')
+      .replace(/&nbsp;|&#160;|&ensp;|&emsp;|&#8194;|&#8195;/gi, ' ')
+      .replace(/[\u00a0\u3000]/g, ' ')
+      .replace(/<[^>]*>/g, ''),
+  )
     .replace(/[<>]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -121,3 +136,72 @@ export const DEFAULT_TIMES = {
   '11-12': ['19:40', '21:15'],
 };
 
+
+export function doubleEncode(value) {
+  return encodeURIComponent(encodeURIComponent(String(value ?? '')));
+}
+export function safeFileName(value, fallback) {
+  return String(value ?? '').replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^_+|_+$/g, '') || fallback;
+}
+
+function headText(bytes, length = 2000) {
+  const head = Buffer.from(bytes.subarray(0, length));
+  return `${head.toString('utf8')}\n${iconv.decode(head, 'gbk')}`;
+}
+
+function looksLikeExcel(bytes, type, head) {
+  const sig = bytes.subarray(0, 4);
+  const ole2 = sig[0] === 0xd0 && sig[1] === 0xcf && sig[2] === 0x11 && sig[3] === 0xe0;
+  const zip = sig[0] === 0x50 && sig[1] === 0x4b;
+  const htmlLike = /<table|<html|<\?xml/i.test(head) && /excel|spreadsheet|octet-stream|html/i.test(type);
+  return ole2 || zip || htmlLike;
+}
+
+export function requireDownload(result, format) {
+  const bytes = result.buffer;
+  const type = result.response.headers.get('content-type') || '';
+  const head = headText(bytes);
+  const loginLike = /登录|登陆|login|统一身份|Service unavailable|系统异常|请稍后|错误/i.test(head);
+  const valid = format === 'pdf'
+    ? /^\s*%PDF-/.test(bytes.subarray(0, 32).toString('latin1'))
+    : looksLikeExcel(bytes, type, head);
+  if (!result.response.ok || !valid || loginLike) {
+    throw Object.assign(new Error('教务导出失败，未收到有效文件'), { status: 502 });
+  }
+  return bytes;
+}
+
+/**
+ * HTML/Excel 导出用的文本单元格：把可能被表格软件当作公式执行的内容转为文本
+ * （CSV 由 csvCell 处理，这里用于 .xls/HTML 导出）。
+ */
+export function formulaSafeText(value) {
+  const text = clean(value);
+  return /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+}
+
+export function requirePage(result, marker, description) {
+  if (result.status !== 200 || !marker.test(result.text) || /<title>[^<]*(?:错误|异常|error)/i.test(result.text)) {
+    throw Object.assign(new Error(`${description}响应异常，请稍后重试`), { status: 502 });
+  }
+}
+
+/**
+ * CSV 单元格：转义引号并把可能被表格软件当作公式执行的内容转为文本。
+ * 仅对“像公式”的值加前导单引号，纯数字（含负号）保持原样。
+ */
+export function csvCell(value) {
+  let text = String(value ?? '').replace(/\r?\n/g, ' ');
+  const numeric = /^-?\d+(?:\.\d+)?$/.test(text);
+  if (!numeric && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+/**
+ * 学号等纯数字串：使用 ="123" 形式让表格软件按文本读取，
+ * 保留前导零，并避免超过 15 位时被科学计数法截断精度。
+ */
+export function csvTextNumber(value) {
+  const text = String(value ?? '');
+  return /^0\d+$|^\d{15,}$/.test(text) ? `"=""${text}"""` : csvCell(text);
+}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { api, errorMessage, isUnauthorized, isUnimplemented } from '../api';
+import { downloadFile } from '../lib/download';
 import { Award, ClipboardList, TrendingUp } from './Icons';
 import { EmptyState, ErrorState, LoadingState, PendingState } from './StateViews';
 import { ProgressEntry } from './ProgressEntry';
@@ -90,6 +91,16 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
   const [note, setNote] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [rosterClasses, setRosterClasses] = useState<RosterClass[]>([]);
+  const [downloadError, setDownloadError] = useState('');
+
+  const download = async (url: string, name: string) => {
+    setDownloadError('');
+    try {
+      await downloadFile(url, name);
+    } catch (err) {
+      setDownloadError(errorMessage(err));
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -178,7 +189,7 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
               hint="页面骨架与样式已就绪，接口接通后即可直接展示真实数据。"
             />
             <div className="table-skeleton" aria-hidden="true">
-              <table className="data-table">
+              <table className={'data-table' + (module === 'tasks' ? ' task-table' : '')}>
                 <thead>
                   <tr>
                     {config.columns.map((column) => (
@@ -208,8 +219,8 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
         )}
 
         {!loading && !error && !pending && rows.length > 0 && (
-          <div className="table-skeleton">
-            <table className="data-table">
+          <div className="table-skeleton" role="region" aria-label={`${config.title}表格，可滚动查看`} tabIndex={0}>
+            <table className={'data-table' + (module === 'tasks' ? ' task-table' : '')}>
               <thead>
                 <tr>
                   {config.columns.map((column) => (
@@ -235,6 +246,11 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
         {module === 'tasks' && rosterClasses.length > 0 && (
           <div className="roster-block">
             <h3 className="roster-title">学生点名册</h3>
+            {downloadError && (
+              <p className="notice-bar is-warn" role="alert">
+                {downloadError}
+              </p>
+            )}
             <div className="roster-grid">
               {rosterClasses.map((item) => (
                 <div className="roster-item" key={item.skbjdm}>
@@ -242,12 +258,20 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
                     <strong>{item.courseName}</strong>
                     <span>{item.className}</span>
                   </div>
-                  <a className="kbtn primary" href={api.rosterReportUrl(term, item.kcdm, item.skbjdm)}>
+                  <button
+                    className="kbtn primary"
+                    type="button"
+                    onClick={() => void download(api.rosterReportUrl(term, item.kcdm, item.skbjdm), `点名册-${item.skbjdm}.xls`)}
+                  >
                     导出点名册
-                  </a>
-                  <a className="kbtn ghost" href={api.rosterExportUrl(term, item.kcdm, item.skbjdm)}>
+                  </button>
+                  <button
+                    className="kbtn ghost"
+                    type="button"
+                    onClick={() => void download(api.rosterExportUrl(term, item.kcdm, item.skbjdm), `点名册-${item.skbjdm}.csv`)}
+                  >
                     CSV
-                  </a>
+                  </button>
                 </div>
               ))}
             </div>
@@ -262,11 +286,23 @@ interface ModulePageProps {
   module: ModuleKey;
   term: string;
   onUnauthorized: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-export function ModulePage({ module, term, onUnauthorized }: ModulePageProps) {
+export function ModulePage({ module, term, onUnauthorized, onDirtyChange }: ModulePageProps) {
   const [progressTab, setProgressTab] = useState<'entry' | 'view'>('entry');
   const [gradeTab, setGradeTab] = useState<'export' | 'entry'>('export');
+  const [progressDirty, setProgressDirty] = useState(false);
+
+  const switchProgressTab = (next: 'entry' | 'view') => {
+    if (next === progressTab) return;
+    if (next === 'view' && progressDirty && !window.confirm('录入的教学进度尚未提交，切换后将丢失，确定继续？')) return;
+    if (next === 'view') {
+      setProgressDirty(false);
+      onDirtyChange?.(false);
+    }
+    setProgressTab(next);
+  };
 
   if (module === 'progress') {
     return (
@@ -275,20 +311,22 @@ export function ModulePage({ module, term, onUnauthorized }: ModulePageProps) {
           <button
             type="button"
             className={'subtab' + (progressTab === 'entry' ? ' is-active' : '')}
-            onClick={() => setProgressTab('entry')}
+            aria-pressed={progressTab === 'entry'}
+            onClick={() => switchProgressTab('entry')}
           >
             录入教学进度
           </button>
           <button
             type="button"
             className={'subtab' + (progressTab === 'view' ? ' is-active' : '')}
-            onClick={() => setProgressTab('view')}
+            aria-pressed={progressTab === 'view'}
+            onClick={() => switchProgressTab('view')}
           >
             查看教学进度
           </button>
         </div>
         {progressTab === 'entry' ? (
-          <ProgressEntry term={term} onUnauthorized={onUnauthorized} />
+          <ProgressEntry term={term} onUnauthorized={onUnauthorized} onDirtyChange={(dirty) => { setProgressDirty(dirty); onDirtyChange?.(dirty); }} />
         ) : (
           <ProgressView term={term} onUnauthorized={onUnauthorized} />
         )}
@@ -303,6 +341,7 @@ export function ModulePage({ module, term, onUnauthorized }: ModulePageProps) {
           <button
             type="button"
             className={'subtab' + (gradeTab === 'export' ? ' is-active' : '')}
+            aria-pressed={gradeTab === 'export'}
             onClick={() => setGradeTab('export')}
           >
             成绩导出
@@ -310,6 +349,7 @@ export function ModulePage({ module, term, onUnauthorized }: ModulePageProps) {
           <button
             type="button"
             className={'subtab' + (gradeTab === 'entry' ? ' is-active' : '')}
+            aria-pressed={gradeTab === 'entry'}
             onClick={() => setGradeTab('entry')}
           >
             成绩录入

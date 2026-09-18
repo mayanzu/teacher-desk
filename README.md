@@ -1,6 +1,6 @@
 # 教师工作台（教务系统现代化前端）
 
-把难看的 KINGOSOFT 教务系统换成漫画风的工作台：**喜鹊儿扫码登录**，后端代理 + 页面解析成 JSON，前端全新 UI。只读看板优先，所有数据仅在本机流转。
+把难看的 KINGOSOFT 教务系统换成漫画风的工作台：**喜鹊儿扫码登录**，后端代理 + 页面解析成 JSON，前端全新 UI。提供查询看板与教学进度录入；数据由所部署的服务器代理访问教务系统。
 
 ## 架构
 
@@ -10,7 +10,7 @@ server/   Node HTTP API：扫码登录、会话保持、页面解析
 ```
 
 - 登录：`GET /cas/login.action` → 本地生成二维码 → 轮询 `frame/LoginBar.jsp` → `POST cas/logon.action`（`loginmethod=xiqueer`），全程不使用账号密码。
-- 会话：Cookie 仅存内存，按浏览器（`td_sid` Cookie）隔离，持久化到 `.sessions/<sid>.json`（已 gitignore），失效自动提示重扫。
+- 会话：Cookie 按浏览器（`td_sid` Cookie）隔离，持久化到 `.sessions/<sid>.json`（已 gitignore），失效自动提示重扫。
 - 多用户：同一实例支持多个老师同时使用，各自独立登录、互不可见（详见下方「多用户」）。
 - 加密：不涉及前端账号密码加密逻辑。
 
@@ -20,7 +20,7 @@ server/   Node HTTP API：扫码登录、会话保持、页面解析
 
 | 依赖 | 版本 | 说明 |
 | --- | --- | --- |
-| Node.js | ≥ 20（推荐 22 LTS） | 运行后端、构建前端 |
+| Node.js | ≥ 20.19 或 ≥ 22.12（推荐 22 LTS） | 运行后端、构建前端 |
 | npm | ≥ 10 | 随 Node 一起安装 |
 | Docker（可选） | 较新版本 | 仅在使用容器方式运行/部署时需要 |
 
@@ -57,6 +57,8 @@ cp .env.example .env       # Windows PowerShell: copy .env.example .env
 | `JWXT_POLL_MS` | `2000` | 扫码轮询间隔（毫秒） |
 | `JWXT_QR_TIMEOUT_MS` | `300000` | 二维码有效期（毫秒） |
 | `SESSION_DIR` | `<项目>/.sessions/` | 各浏览器会话的持久化目录（容器内用 `/data/sessions`） |
+| `JWXT_CALENDAR` | 空 | 按学期配置真实首周周一与作息（未配置时界面标注“估算”），见下方「回归验证与校历配置」 |
+| `COOKIE_SECURE` | `0` | HTTPS 部署设为 `1`，会话 Cookie 增加 `Secure` 标记 |
 
 ### 4. 运行
 
@@ -127,8 +129,9 @@ docker run -d --name teacher-desk \
 | `GET /api/progress/classes?term=2026,0` | 需录入进度的教学班列表（含审核状态） |
 | `GET /api/progress/entry?term=&kcdm=&bjdm=…` | 某教学班的录入表单（meta + 已录入行） |
 | `POST /api/progress/entry` | 提交进度到 `TeachingTaskingJxjcbAction.do`（GBK 表单编码；`confirm:true` 才提交，否则返回预览） |
-| `GET /api/progress/copy-sources?term=&kcdm=&jsdm=` | 可复制的来源教学班（按录入人过滤） |
-| `GET /api/progress/copy?kcdm=&source=&sourceTerm=` | 复制指定教学班的进度内容（`EnterTeachingTaskPlanByKcAction.do?hidOption=SYNSKBJ`） |
+| `GET /api/progress/copy-terms?term=&kcdm=&skbjdm=` | 可复制的来源学期 |
+| `GET /api/progress/copy-classes?term=&kcdm=&skbjdm=&xnxq=` | 指定学期下可复制的来源教学班 |
+| `GET /api/progress/copy?kcdm=&xnxq=&source=` | 复制指定教学班的进度内容（`EnterTeachingTaskPlanByKcAction.do?hidOption=SYNSKBJ`） |
 | `GET /api/grades?term=2026,0` | 成绩登记册（合并环节成绩 / 毕业设计（论文）成绩 / 补考成绩；无记录时返回空并附提示） |
 | `GET /api/course-grades/classes?term=2026,0` | 分课程按行政班级查看成绩：本学期可查看成绩的课程/班级列表 |
 | `GET /api/course-grades?term=&kcdm=&bjdm=&bjmc=&flag=1&dyfs=dl` | 某课程/班级的成绩明细（`flag=1` 原始成绩、`flag=2` 有效成绩；`dyfs=dl` 单栏、`sl` 双栏） |
@@ -199,3 +202,18 @@ ssh root@<router> "docker compose up -d"               # 使用仓库内 docker-
 > 录入属于写操作：`POST /api/progress/entry` 默认只返回提交预览，必须显式带 `confirm: true` 才会真正提交到教务系统。
 
 > 仅用于登录本人账号、查看本人权限内的数据。
+
+
+## 回归验证与校历配置
+
+运行 `npm test` 执行隔离回归测试，运行 `npm run build` 检查前端类型与生产构建，运行 `npm run lint` 对后端/工具/测试做 `no-undef` 静态检查（前端构建与 `node --check` 都发现不了未定义变量）。`npm run verify` 会依次执行 lint、typecheck、测试与构建；CI 在 Node 20 / 22 上运行同一套检查（见 `.github/workflows/ci.yml`）。测试使用合成数据与 HTML fixture，不向教务系统写入。
+
+查询结果在服务端按浏览器会话缓存约 5 分钟，最多 200 项，并合并并发相同请求；匿名会话 30 分钟未活动回收，已登录会话 7 天未活动回收，内存上下文总数上限 500。`POST /api/login/start` 按来源 IP 限流（5 分钟内 10 次）。写请求校验 `Origin`：无 `Origin` 或同源（含 `localhost` 不同端口）放行。登录 Cookie 持久化到会话目录。
+
+导出的 CSV 会把 `=`、`+`、`-`、`@` 开头的可疑内容转为文本，并对有前导零或超长（≥15 位）的学号使用 `="…"` 形式，避免表格软件执行公式或丢失精度。
+
+便利贴按登录账号保存在当前浏览器，旧版无账号归属的笔记仍保留在原存储键，不自动展示给新账号。
+
+开学日期尚未对接学校校历接口。默认日期和作息会在页面明确标注为估算；可在 `.env` 使用 `JWXT_CALENDAR` 按学期覆盖，示例见 `.env.example`。`semesterStart` 必须为首周周一（YYYY-MM-DD），学期编码为 0（第一学期）和 1（第二学期）。请填写学校实际值，示例不代表学校校历。
+
+HTTPS 部署设置 `COOKIE_SECURE=1`；本机 HTTP 开发保持 `0`。EXE 模式从用户数据目录下 `.env` 读取配置。扫码和查询需要网络，单文件 EXE 仅免去安装 Node 的步骤。

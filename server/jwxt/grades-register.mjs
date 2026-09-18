@@ -62,7 +62,7 @@ export async function getGrades(session, term) {
     });
     const rows = parseTable(res.text);
     const headerIndex = rows.findIndex((row) => row.includes(register.header));
-    if (headerIndex < 0) continue;
+    if (headerIndex < 0) throw Object.assign(new Error('成绩登记册页面结构异常'), { status: 502 });
     responded = true;
     for (const row of rows.slice(headerIndex + 1)) {
       if (!row.some((cell) => cell !== '')) continue;

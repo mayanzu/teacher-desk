@@ -1,3 +1,5 @@
+name: teacher-desk
+
 services:
   timetable:
     image: teacher-desk:latest

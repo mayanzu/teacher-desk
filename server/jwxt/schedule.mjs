@@ -1,4 +1,4 @@
-import { clean, parseTerm, parseWeekLessonBlock, DEFAULT_TIMES } from './common.mjs';
+import { clean, parseTerm, parseWeekLessonBlock, DEFAULT_TIMES, requirePage } from './common.mjs';
 
 export async function getSchedule(session, term, { totalWeeks = 20 } = {}) {
   const { xn, xq } = parseTerm(term);
@@ -14,6 +14,7 @@ export async function getSchedule(session, term, { totalWeeks = 20 } = {}) {
       ),
     );
     for (const res of results) {
+      requirePage(res, /weeklesson|weekly0|星期|暂无|没有|无课/i, '课表');
       const blocks = res.text.match(/<div(?=[^>]*class="[^"]*weeklesson)[^>]*>[\s\S]*?<\/ul>\s*<\/div>/gi) || [];
       for (const block of blocks) {
         const course = parseWeekLessonBlock(block);
@@ -34,8 +35,20 @@ export async function getSchedule(session, term, { totalWeeks = 20 } = {}) {
     return Math.max(max, ...nums.map(Number), 0);
   }, 0);
   const total = Math.max(totalWeeks, maxWeek);
-  const semesterStart = guessSemesterStart(xn, xq);
-  return { xn, xq, term, teacher, courses, maxWeek, totalWeeks: total, semesterStart, times: DEFAULT_TIMES };
+  let calendar;
+  try { calendar = JSON.parse(process.env.JWXT_CALENDAR || '{}')[term]; }
+  catch { throw new Error('JWXT_CALENDAR 必须是有效 JSON'); }
+  const configuredDate = calendar?.semesterStart;
+  if (configuredDate && (!/^\d{4}-\d{2}-\d{2}$/.test(configuredDate) ||
+      !Number.isFinite(Date.parse(configuredDate)) || new Date(configuredDate).toISOString().slice(0, 10) !== configuredDate ||
+      new Date(configuredDate).getUTCDay() !== 1)) {
+    throw new Error('校历 semesterStart 必须是有效的首周周一日期（YYYY-MM-DD）');
+  }
+  const times = { ...DEFAULT_TIMES, ...calendar?.times };
+  if (Object.values(times).some((pair) => !Array.isArray(pair) || pair.length !== 2 ||
+      pair.some((time) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)))) throw new Error('校历作息时间格式无效');
+  const semesterStart = configuredDate || guessSemesterStart(xn, xq);
+  return { xn, xq, term, teacher, courses, maxWeek, totalWeeks: total, semesterStart, calendarEstimated: !configuredDate, timesEstimated: Object.keys(DEFAULT_TIMES).some((slot) => !calendar?.times?.[slot]), times };
 }
 
 function guessSemesterStart(xn, xq) {

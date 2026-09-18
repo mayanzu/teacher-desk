@@ -6,7 +6,7 @@
  *   - 数据缓存
  * 会话按 sid 持久化到 SESSION_DIR/<sid>.json，重启后可恢复，互不干扰。
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { config } from './config.mjs';
@@ -15,12 +15,33 @@ import { createLoginFlow } from './login.mjs';
 
 const COOKIE = 'td_sid';
 const SID_RE = /^[a-f0-9]{36}$/;
-const IDLE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 天未活动即回收
+const IDLE_TTL = 7 * 24 * 60 * 60 * 1000; // 已登录会话：7 天未活动即回收
+const ANON_TTL = 30 * 60 * 1000; // 匿名上下文：30 分钟未活动即回收
+const MAX_CONTEXTS = 500; // 内存中同时保留的会话上下文上限
 const MAX_AGE = Math.floor(IDLE_TTL / 1000);
 
 const contexts = new Map(); // sid -> ctx
 
 const sidFile = (sid) => join(config.sessionDir, `${sid}.json`);
+
+/** 回收最少活动的上下文；优先回收没有登录态的匿名上下文。 */
+function evictOverflow() {
+  while (contexts.size > MAX_CONTEXTS) {
+    let victim = null;
+    for (const [sid, ctx] of contexts) {
+      if (ctx.session) continue;
+      if (!victim || ctx.lastSeen < victim.ctx.lastSeen) victim = { sid, ctx };
+    }
+    if (!victim) {
+      for (const [sid, ctx] of contexts) {
+        if (!victim || ctx.lastSeen < victim.ctx.lastSeen) victim = { sid, ctx };
+      }
+    }
+    if (!victim) break;
+    try { victim.ctx.loginFlow.reset?.(); } catch { /* ignore */ }
+    contexts.delete(victim.sid);
+  }
+}
 
 function parseCookies(header) {
   const out = {};
@@ -39,13 +60,14 @@ function parseCookies(header) {
 }
 
 function createContext(sid) {
-  return { sid, session: null, loginFlow: createLoginFlow(), cache: new Map(), lastSeen: Date.now() };
+  return { sid, session: null, loginFlow: createLoginFlow(), cache: new Map(), inflight: new Map(), lastSeen: Date.now() };
 }
 
 function loadPersisted(sid) {
   const file = sidFile(sid);
   if (!existsSync(file)) return null;
   try {
+    if (Date.now() - statSync(file).mtimeMs > IDLE_TTL) return null;
     return JwxtSession.deserialize(readFileSync(file, 'utf8'));
   } catch {
     return null;
@@ -57,7 +79,7 @@ export function contextFor(req, res) {
   const cookies = parseCookies(req.headers.cookie);
   let sid = cookies[COOKIE];
   let assign = false;
-  if (!sid || !SID_RE.test(sid)) {
+  if (!sid || !SID_RE.test(sid) || (!contexts.has(sid) && !loadPersisted(sid))) {
     sid = randomBytes(18).toString('hex');
     assign = true;
   }
@@ -67,10 +89,14 @@ export function contextFor(req, res) {
     const persisted = loadPersisted(sid);
     if (persisted) ctx.session = persisted;
     contexts.set(sid, ctx);
+    evictOverflow();
   }
   ctx.lastSeen = Date.now();
+  if (ctx.session) {
+    try { utimesSync(sidFile(sid), new Date(), new Date()); } catch { /* not persisted yet */ }
+  }
   if (assign) {
-    res.setHeader('Set-Cookie', `${COOKIE}=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${MAX_AGE}`);
+    setCookie(res, sid);
   }
   return ctx;
 }
@@ -79,10 +105,14 @@ export function contextFor(req, res) {
 export function persistSession(ctx) {
   try {
     mkdirSync(config.sessionDir, { recursive: true });
-    if (ctx.session) writeFileSync(sidFile(ctx.sid), ctx.session.serialize(), 'utf8');
+    if (ctx.session) {
+      const file = sidFile(ctx.sid);
+      writeFileSync(`${file}.tmp`, ctx.session.serialize(), { encoding: 'utf8', mode: 0o600 });
+      renameSync(`${file}.tmp`, file);
+    }
     else rmSync(sidFile(ctx.sid), { force: true });
-  } catch {
-    /* best effort */
+  } catch (error) {
+    console.warn('[session] 会话持久化失败：', error instanceof Error ? error.message : error);
   }
 }
 
@@ -95,6 +125,7 @@ export function dropContext(ctx) {
     /* ignore */
   }
   ctx.cache.clear();
+  ctx.inflight.clear();
   try {
     rmSync(sidFile(ctx.sid), { force: true });
   } catch {
@@ -106,9 +137,10 @@ export function dropContext(ctx) {
 export function sweepSessions() {
   const now = Date.now();
   for (const [sid, ctx] of contexts) {
-    if (now - ctx.lastSeen > IDLE_TTL) {
+    const ttl = ctx.session ? IDLE_TTL : ANON_TTL;
+    if (now - ctx.lastSeen > ttl) {
       try {
-        ctx.loginFlow.stop?.();
+        ctx.loginFlow.reset?.();
       } catch {
         /* ignore */
       }
@@ -123,10 +155,18 @@ export function sweepSessions() {
   if (!existsSync(config.sessionDir)) return;
   try {
     for (const name of readdirSync(config.sessionDir)) {
-      if (!name.endsWith('.json')) continue;
       const file = join(config.sessionDir, name);
+      if (name.endsWith('.json.tmp')) {
+        try {
+          if (now - statSync(file).mtimeMs > 60 * 60 * 1000) rmSync(file, { force: true });
+        } catch {
+          /* ignore */
+        }
+        continue;
+      }
+      if (!name.endsWith('.json')) continue;
       try {
-        if (now - statSync(file).mtimeMs > IDLE_TTL) rmSync(file, { force: true });
+        if (!contexts.has(name.slice(0, -5)) && now - statSync(file).mtimeMs > IDLE_TTL) rmSync(file, { force: true });
       } catch {
         /* ignore */
       }
@@ -134,4 +174,18 @@ export function sweepSessions() {
   } catch {
     /* ignore */
   }
+}
+
+function setCookie(res, sid) {
+  res.setHeader('Set-Cookie', `${COOKIE}=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${MAX_AGE}${process.env.COOKIE_SECURE === '1' ? '; Secure' : ''}`);
+}
+export function rotateContext(ctx, res) {
+  const oldSid = ctx.sid;
+  contexts.delete(oldSid);
+  try { rmSync(sidFile(oldSid), { force: true }); } catch { /* best effort */ }
+  ctx.sid = randomBytes(18).toString('hex');
+  ctx.cache.clear();
+  ctx.inflight.clear();
+  contexts.set(ctx.sid, ctx);
+  setCookie(res, ctx.sid);
 }

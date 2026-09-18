@@ -58,7 +58,16 @@ export class JwxtSession {
       ...(init.headers || {}),
     };
     if (this.cookies.size) headers.Cookie = this.cookieHeader();
-    const response = await fetch(url, { ...init, headers, redirect: init.redirect || 'manual' });
+    let response;
+    try {
+      response = await fetch(url, { ...init, signal: init.signal || AbortSignal.timeout(30000), headers, redirect: init.redirect || 'manual' });
+    } catch {
+      throw Object.assign(new Error('教务系统暂时无法连接，请稍后重试'), { status: 503 });
+    }
+    if (!response.ok) {
+      const auth = response.status === 401 || /cas\/login/i.test(response.headers.get('location') || '');
+      throw Object.assign(new Error(auth ? '登录已过期，请重新扫码' : `教务系统响应异常（HTTP ${response.status}）`), { status: auth ? 401 : 502 });
+    }
     this.storeCookies(response);
     const buffer = Buffer.from(await response.arrayBuffer());
     return { response, url, buffer };
@@ -66,7 +75,11 @@ export class JwxtSession {
 
   async text(path, init = {}) {
     const { response, buffer, url } = await this.request(path, init);
-    return { status: response.status, headers: response.headers, url, text: decode(buffer, response.headers) };
+    const text = decode(buffer, response.headers);
+    if (!/cas\/(login|logon)\.action/.test(url) && /<form[^>]+action=["'][^"']*(?:login|logon)\.action|^\s*(?:会话已过期|登录超时)/i.test(text)) {
+      throw Object.assign(new Error('登录已过期，请重新扫码'), { status: 401 });
+    }
+    return { status: response.status, headers: response.headers, url, text };
   }
 
   async json(path, init = {}) {

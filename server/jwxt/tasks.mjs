@@ -10,7 +10,7 @@ export async function getTasks(session, term) {
   });
   const rows = parseTable(res.text);
   const headerIndex = rows.findIndex((row) => row.some((c) => /课程/.test(c)) && row.some((c) => /学时|学分/.test(c)));
-  if (headerIndex < 0) return { items: [], headers: [] };
+  if (headerIndex < 0) throw Object.assign(new Error('教学任务页面结构异常，请稍后重试'), { status: 502 });
   const headers = rows[headerIndex];
   const items = rows
     .slice(headerIndex + 1)

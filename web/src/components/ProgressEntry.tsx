@@ -1,45 +1,22 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, errorMessage, isUnauthorized } from '../api';
 import type { ProgressClass, ProgressCopyOption, ProgressEntryRow, ProgressTotals } from '../types';
 import { EmptyState, ErrorState, LoadingState } from './StateViews';
 
-const HOUR_KEYS = ['lectureHours', 'labHours', 'practiceHours', 'otherHours'] as const;
-
-function formatHours(value: number): string {
-  if (!Number.isFinite(value) || value === 0) return '';
-  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
-}
-
-function sumHours(row: ProgressEntryRow): string {
-  const total = HOUR_KEYS.reduce((sum, key) => sum + (Number(row[key]) || 0), 0);
-  return total ? formatHours(total) : row.hours;
-}
-
-function applyTotals(list: ProgressEntryRow[], totals?: ProgressTotals): ProgressEntryRow[] {
-  if (!totals) return list;
-  const count = list.length || 1;
-  const perRow: Record<(typeof HOUR_KEYS)[number], number> = {
-    lectureHours: totals.lecture / count,
-    labHours: totals.lab / count,
-    practiceHours: totals.practice / count,
-    otherHours: totals.other / count,
-  };
-  return list.map((row) => {
-    const next = { ...row };
-    HOUR_KEYS.forEach((key) => {
-      if (!next[key] && perRow[key] > 0) next[key] = formatHours(perRow[key]);
-    });
-    next.hours = sumHours(next);
-    return next;
-  });
-}
+import { applyTotals, sumHours, validateHours } from '../lib/progress';
 
 interface ProgressEntryProps {
   term: string;
   onUnauthorized: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-export function ProgressEntry({ term, onUnauthorized }: ProgressEntryProps) {
+export function ProgressEntry({ term, onUnauthorized, onDirtyChange }: ProgressEntryProps) {
+  const requestId = useRef(0);
+  const copyId = useRef(0);
+  const loadedId = useRef(-1);
+  const [listLoading, setListLoading] = useState(true);
+  const [listAttempt, setListAttempt] = useState(0);
   const [classes, setClasses] = useState<ProgressClass[]>([]);
   const [selected, setSelected] = useState<ProgressClass | null>(null);
   const [rows, setRows] = useState<ProgressEntryRow[]>([]);
@@ -51,12 +28,33 @@ export function ProgressEntry({ term, onUnauthorized }: ProgressEntryProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [noticeKind, setNoticeKind] = useState<'info' | 'success' | 'error'>('info');
+  const [dirty, setDirty] = useState(false);
   const [copyTerms, setCopyTerms] = useState<ProgressCopyOption[]>([]);
   const [copyClasses, setCopyClasses] = useState<ProgressCopyOption[]>([]);
   const [copyTerm, setCopyTerm] = useState('');
   const [copyClass, setCopyClass] = useState('');
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyLoading, setCopyLoading] = useState(false);
+
+  const showNotice = useCallback((message: string, kind: 'info' | 'success' | 'error' = 'info') => {
+    setNotice(message);
+    setNoticeKind(kind);
+  }, []);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
 
   const handleError = useCallback(
     (err: unknown) => {
@@ -71,12 +69,13 @@ export function ProgressEntry({ term, onUnauthorized }: ProgressEntryProps) {
 
   useEffect(() => {
     let cancelled = false;
+    setListLoading(true);
     setClasses([]);
     setSelected(null);
     setRows([]);
     setCopyOpen(false);
     setError('');
-    setNotice('');
+    showNotice('');
     api
       .progressClasses(term)
       .then((data) => {
@@ -84,13 +83,23 @@ export function ProgressEntry({ term, onUnauthorized }: ProgressEntryProps) {
       })
       .catch((err: unknown) => {
         if (!cancelled) handleError(err);
-      });
+      })
+      .finally(() => { if (!cancelled) setListLoading(false); });
     return () => {
+      requestId.current += 1;
+      copyId.current += 1;
       cancelled = true;
     };
-  }, [term, handleError]);
+  }, [term, handleError, listAttempt, showNotice]);
 
   const openClass = async (item: ProgressClass) => {
+    if (dirty && !window.confirm('当前教学班有未提交的修改，切换后将会丢失，确定继续？')) return;
+    const token = ++requestId.current;
+    copyId.current += 1;
+    loadedId.current = -1;
+    setMeta({});
+    setCopyLoading(false);
+    setDirty(false);
     setSelected(item);
     setRows([]);
     setCopyOpen(false);
@@ -99,25 +108,28 @@ export function ProgressEntry({ term, onUnauthorized }: ProgressEntryProps) {
     setCopyTerm('');
     setCopyClass('');
     setError('');
-    setNotice('');
+    showNotice('');
     setLoading(true);
     try {
       const data = await api.progressEntry(term, item.params as unknown as Record<string, string>);
+      if (token !== requestId.current) return;
+      loadedId.current = token;
       setMeta(data.meta ?? {});
       setFormFields(data.formFields ?? {});
       setXqskzs(data.xqskzs ?? '');
       setTotals(data.totals);
       const list = applyTotals(data.rows ?? [], data.totals);
       setRows(list);
-      if (!list.length) setNotice('该教学班暂无进度行，可直接提交生成。');
+      if (!list.length) showNotice('该教学班暂无可编辑进度行，请先在教务系统检查课程安排。');
     } catch (err) {
-      handleError(err);
+      if (token === requestId.current) handleError(err);
     } finally {
-      setLoading(false);
+      if (token === requestId.current) setLoading(false);
     }
   };
 
   const updateRow = (index: number, patch: Partial<ProgressEntryRow>) => {
+    setDirty(true);
     setRows((prev) =>
       prev.map((row, i) => {
         if (i !== index) return row;
@@ -129,51 +141,70 @@ export function ProgressEntry({ term, onUnauthorized }: ProgressEntryProps) {
   };
 
   const submit = async () => {
-    if (!selected || !rows.length) return;
+    if (!selected || !rows.length || saving || loading || copyLoading || loadedId.current !== requestId.current) return;
+    const invalidHours = validateHours(rows, totals);
+    if (invalidHours) { setError(invalidHours); return; }
+    const token = requestId.current;
     if (!window.confirm(`确认提交「${selected.className}」的教学进度表到教务系统？`)) return;
     setSaving(true);
     setError('');
-    setNotice('');
+    showNotice('');
     try {
       const result = await api.progressSave({ term, meta, rows, formFields, xqskzs, confirm: true });
+      if (token !== requestId.current) return;
       const message = (result.data as { message?: string } | null)?.message;
-      const ok = (result.data as { status?: string } | null)?.status === '200';
-      setNotice(`${ok ? '提交成功' : '提交失败'}：${message || `HTTP ${result.status}`}`);
+      const ok = (result.data as { status?: string } | null)?.status?.toString() === '200';
+      if (ok) {
+        setDirty(false);
+        showNotice(`提交成功：${message || '教学进度已保存'}`, 'success');
+      } else if (result.data) {
+        showNotice(`提交失败：${message || `HTTP ${result.status}`}`, 'error');
+      } else {
+        showNotice('教务响应异常，请刷新页面核对是否已保存后再重试。', 'error');
+      }
     } catch (err) {
-      handleError(err);
+      if (token === requestId.current) handleError(err);
     } finally {
-      setSaving(false);
+      if (token === requestId.current) setSaving(false);
     }
   };
 
   const loadCopyClasses = async (xnxq: string) => {
     if (!selected) return;
+    const token = requestId.current;
+    const copyToken = ++copyId.current;
+    const current = () => token === requestId.current && copyToken === copyId.current;
     setCopyLoading(true);
     setError('');
     try {
       const data = await api.progressCopyClasses(term, selected.params.kcdm, selected.classCode, xnxq);
+      if (!current()) return;
       const items = data.items ?? [];
       setCopyClasses(items);
       setCopyClass(items[0]?.code ?? '');
-      if (!items.length) setNotice('该学期没有可复制的上课班级。');
+      if (!items.length) showNotice('该学期没有可复制的上课班级。');
     } catch (err) {
-      handleError(err);
+      if (current()) handleError(err);
     } finally {
-      setCopyLoading(false);
+      if (current()) setCopyLoading(false);
     }
   };
 
   const openCopy = async () => {
     if (!selected) return;
-    setNotice('');
+    showNotice('');
     setCopyOpen(true);
+    const token = requestId.current;
+    const copyToken = ++copyId.current;
+    const current = () => token === requestId.current && copyToken === copyId.current;
     setCopyLoading(true);
     try {
       const data = await api.progressCopyTerms(term, selected.params.kcdm, selected.classCode);
+      if (!current()) return;
       const items = data.items ?? [];
       setCopyTerms(items);
-      const current = `${term.split(',')[0]}${term.split(',')[1] ?? '0'}`;
-      const preferred = items.find((item) => item.code === current) ?? items[0];
+      const currentTerm = `${term.split(',')[0]}${term.split(',')[1] ?? '0'}`;
+      const preferred = items.find((item) => item.code === currentTerm) ?? items[0];
       setCopyTerm(preferred?.code ?? '');
       if (preferred) {
         await loadCopyClasses(preferred.code);
@@ -182,28 +213,32 @@ export function ProgressEntry({ term, onUnauthorized }: ProgressEntryProps) {
         setCopyClass('');
       }
     } catch (err) {
-      handleError(err);
+      if (current()) handleError(err);
     } finally {
-      setCopyLoading(false);
+      if (current()) setCopyLoading(false);
     }
   };
 
   const applyCopy = async () => {
     if (!selected || !copyTerm || !copyClass) return;
+    const token = requestId.current;
+    const copyToken = ++copyId.current;
+    const current = () => token === requestId.current && copyToken === copyId.current;
     setCopyLoading(true);
     setError('');
     try {
       const data = await api.progressCopy(selected.params.kcdm, copyTerm, copyClass);
+      if (!current()) return;
       const items = data.items ?? [];
       if (!items.length) {
-        setNotice('该来源没有可复制的进度内容。');
+        showNotice('该来源没有可复制的进度内容。');
         return;
       }
       setRows((prev) =>
         prev.map((row, index) => {
           const item = items[index];
           if (!item) return row;
-          return {
+          const copied = {
             ...row,
             content: item.content || row.content,
             requirement: item.requirement || row.requirement,
@@ -214,14 +249,16 @@ export function ProgressEntry({ term, onUnauthorized }: ProgressEntryProps) {
             practiceHours: item.practiceHours || row.practiceHours,
             otherHours: item.otherHours || row.otherHours,
           };
+          return { ...copied, hours: sumHours(copied) };
         }),
       );
-      setNotice(`已复制 ${items.length} 条进度内容，请核对后提交。`);
+      setDirty(true);
+      showNotice(`已复制 ${items.length} 条进度内容，请核对后提交。`, 'success');
       setCopyOpen(false);
     } catch (err) {
-      handleError(err);
+      if (current()) handleError(err);
     } finally {
-      setCopyLoading(false);
+      if (current()) setCopyLoading(false);
     }
   };
 
@@ -243,6 +280,7 @@ export function ProgressEntry({ term, onUnauthorized }: ProgressEntryProps) {
                 key={item.classCode}
                 type="button"
                 className={'entry-class' + (active ? ' is-active' : '')}
+                disabled={saving}
                 onClick={() => void openClass(item)}
               >
                 <strong>{item.courseRaw}</strong>
@@ -250,16 +288,17 @@ export function ProgressEntry({ term, onUnauthorized }: ProgressEntryProps) {
               </button>
             );
           })}
-          {classes.length === 0 && !error && <EmptyState title="暂无教学进度录入任务" message="本学期没有需要录入的教学班。" />}
+          {listLoading && <LoadingState message="正在加载教学班…" />}
+          {classes.length === 0 && !listLoading && !error && <EmptyState title="暂无教学进度录入任务" message="本学期没有需要录入的教学班。" />}
         </div>
 
-        {error && <ErrorState title="录入数据加载失败" message={error} onRetry={() => selected && void openClass(selected)} />}
+        {error && <ErrorState title="录入数据加载失败" message={error} onRetry={() => selected ? void openClass(selected) : setListAttempt((v) => v + 1)} />}
         {loading && <LoadingState message="正在载入录入表单…" />}
 
         {!loading && selected && rows.length > 0 && (
-          <div className="table-skeleton">
+          <div>
             <div className="entry-toolbar">
-              <button className="kbtn ghost" type="button" disabled={copyLoading} onClick={() => void openCopy()}>
+              <button className="kbtn ghost" type="button" disabled={copyLoading || saving} onClick={() => void openCopy()}>
                 复制教学进度表[按上课班级]
               </button>
               <span className="entry-toolbar-label">{selected.className}</span>
@@ -271,7 +310,7 @@ export function ProgressEntry({ term, onUnauthorized }: ProgressEntryProps) {
                   复制来源学期
                   <select
                     value={copyTerm}
-                    disabled={copyLoading}
+                    disabled={copyLoading || saving}
                     onChange={(event) => {
                       setCopyTerm(event.target.value);
                       void loadCopyClasses(event.target.value);
@@ -314,55 +353,65 @@ export function ProgressEntry({ term, onUnauthorized }: ProgressEntryProps) {
 
             {totals && (
               <p className="entry-totals">
-                课程学时：讲授 {totals.lecture} · 实践 {totals.practice} · 实验 {totals.lab} · 其它 {totals.other}
-                （已按周次自动均分，无需填写）
+                课程学时：讲授 {totals.lecture} · 实践 {totals.practice} · 实验 {totals.lab} · 劳动 {totals.labor} · 其它 {totals.other}
+                （保留已有学时，仅将剩余学时分配至空行）
               </p>
             )}
 
-            <table className="data-table entry-table">
-              <thead>
-                <tr>
-                  <th scope="col">周次</th>
-                  <th scope="col">日期</th>
-                  <th scope="col">节次</th>
-                  <th scope="col">授课内容</th>
-                  <th scope="col">备注</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, index) => (
-                  <tr key={row.subId || index}>
-                    <td>{row.week}</td>
-                    <td>{row.date}</td>
-                    <td>{row.period}</td>
-                    <td>
-                      <textarea
-                        className="entry-input"
-                        value={row.content}
-                        rows={2}
-                        onChange={(event) => updateRow(index, { content: event.target.value })}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="entry-input"
-                        value={row.remark}
-                        onChange={(event) => updateRow(index, { remark: event.target.value })}
-                      />
-                    </td>
+            <div className="table-skeleton" role="region" aria-label="教学进度录入表，可横向滚动" tabIndex={0}>
+              <table className="data-table entry-table">
+                <thead>
+                  <tr>
+                    <th scope="col">周次</th>
+                    <th scope="col">日期</th>
+                    <th scope="col">节次</th>
+                    <th scope="col">授课内容</th>
+                    <th scope="col">备注</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {rows.map((row, index) => (
+                    <tr key={row.subId || index}>
+                      <td>{row.week}</td>
+                      <td>{row.date}</td>
+                      <td>{row.period}</td>
+                      <td>
+                        <textarea
+                          className="entry-input"
+                          disabled={saving || copyLoading}
+                          aria-label={`第 ${row.week} 周授课内容`}
+                          value={row.content}
+                          rows={2}
+                          onChange={(event) => updateRow(index, { content: event.target.value })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          className="entry-input"
+                          disabled={saving || copyLoading}
+                          aria-label={`第 ${row.week} 周备注`}
+                          value={row.remark}
+                          onChange={(event) => updateRow(index, { remark: event.target.value })}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <div className="entry-actions">
-              <button className="kbtn primary" type="button" disabled={saving} onClick={() => void submit()}>
+              <button className="kbtn primary" type="button" disabled={saving || copyLoading || loading} onClick={() => void submit()}>
                 提交到教务系统
               </button>
             </div>
           </div>
         )}
 
-        {notice && <p className="entry-notice">{notice}</p>}
+        {notice && (
+          <p className={`entry-notice is-${noticeKind}`} role={noticeKind === 'error' ? 'alert' : 'status'}>
+            {notice}
+          </p>
+        )}
       </div>
     </section>
   );

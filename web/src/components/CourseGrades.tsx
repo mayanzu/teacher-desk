@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, errorMessage, isUnauthorized } from '../api';
+import { downloadFile } from '../lib/download';
 import { EmptyState, ErrorState, LoadingState } from './StateViews';
 import type { CourseGradeClass, CourseGradesData } from '../types';
 
@@ -26,6 +27,8 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
   const [report, setReport] = useState<CourseGradesData | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const [downloadError, setDownloadError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -54,7 +57,7 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
     return () => {
       cancelled = true;
     };
-  }, [term, onUnauthorized]);
+  }, [term, attempt, onUnauthorized]);
 
   // 按课程名前的课程代码分组（同一门课的多个行政班级归到一组）
   const groups = useMemo<CourseGroup[]>(() => {
@@ -146,13 +149,31 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
   if (error) {
     return (
       <div className="panel-card">
-        <ErrorState title="课程成绩加载失败" message={error} />
+        <ErrorState title="课程成绩加载失败" message={error} onRetry={() => setAttempt((value) => value + 1)} />
       </div>
     );
   }
 
+  const download = async (url: string, name: string) => {
+    setDownloadError('');
+    try {
+      await downloadFile(url, name);
+    } catch (err) {
+      if (isUnauthorized(err)) {
+        onUnauthorized();
+        return;
+      }
+      setDownloadError(errorMessage(err));
+    }
+  };
+
   return (
     <div className="panel-card">
+      {downloadError && (
+        <p className="notice-bar is-warn" role="alert">
+          {downloadError}
+        </p>
+      )}
       {groups.length === 0 ? (
         <EmptyState title="本学期没有课程成绩" message="教务系统未返回本学期可查看成绩的课程。" />
       ) : (
@@ -196,9 +217,13 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
                           >
                             {open ? '收起' : '查看原始成绩'}
                           </button>
-                          <a className="kbtn primary grade-view" href={pdfUrl(item)}>
+                          <button
+                            className="kbtn primary grade-view"
+                            type="button"
+                            onClick={() => void download(pdfUrl(item), `${item.courseName}_${item.className}_原始成绩.pdf`)}
+                          >
                             导出 PDF
-                          </a>
+                          </button>
                         </div>
                       </div>
 
@@ -213,7 +238,7 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
                               {report.rows.length === 0 ? (
                                 <EmptyState title="暂无成绩记录" message="该课程/班级在此学期还没有成绩数据。" />
                               ) : (
-                                <div className="grade-table-wrap">
+                                <div className="grade-table-wrap" role="region" aria-label="成绩明细表，可滚动查看" tabIndex={0}>
                                   <table className="data-table grade-table">
                                     <thead>
                                       {report.header.map((row, rowIndex) => (

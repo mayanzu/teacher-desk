@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, errorMessage, isUnauthorized } from '../api';
-import type { ProgressSummaryGroup } from '../types';
+import { downloadFile } from '../lib/download';
+import type { ProgressSummaryFailure, ProgressSummaryGroup } from '../types';
 import { EmptyState, ErrorState, LoadingState } from './StateViews';
 
 interface ProgressViewProps {
@@ -10,10 +11,12 @@ interface ProgressViewProps {
 
 export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
   const [groups, setGroups] = useState<ProgressSummaryGroup[]>([]);
+  const [failures, setFailures] = useState<ProgressSummaryFailure[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [downloadError, setDownloadError] = useState('');
 
   const handleError = useCallback(
     (err: unknown) => {
@@ -30,10 +33,13 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
     let cancelled = false;
     setLoading(true);
     setError('');
+    setFailures([]);
     api
       .progressSummary(term)
       .then((data) => {
-        if (!cancelled) setGroups(data.items ?? []);
+        if (cancelled) return;
+        setGroups(data.items ?? []);
+        setFailures(data.failures ?? []);
       })
       .catch((err: unknown) => {
         if (!cancelled) handleError(err);
@@ -46,6 +52,19 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
     };
   }, [term, attempt, handleError]);
 
+  const download = async (url: string, name: string) => {
+    setDownloadError('');
+    try {
+      await downloadFile(url, name);
+    } catch (err) {
+      if (isUnauthorized(err)) {
+        onUnauthorized();
+        return;
+      }
+      setDownloadError(errorMessage(err));
+    }
+  };
+
   return (
     <section className="section" aria-labelledby="progressViewTitle">
       <div className="section-heading">
@@ -54,9 +73,13 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
           <p className="sub">按上课班级分组，点击展开每周授课内容</p>
         </div>
         <div className="week-nav">
-          <a className="kbtn primary" href={api.progressPdfUrl(term, { scope: 'term' })}>
+          <button
+            className="kbtn primary"
+            type="button"
+            onClick={() => void download(api.progressPdfUrl(term, { scope: 'term' }), '学期教学进度表.pdf')}
+          >
             导出 PDF
-          </a>
+          </button>
           <button className="kbtn ghost" type="button" onClick={() => setAttempt((v) => v + 1)}>
             刷新
           </button>
@@ -64,9 +87,21 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
       </div>
 
       <div className="panel-card">
+        {downloadError && (
+          <p className="notice-bar is-warn" role="alert">
+            {downloadError}
+          </p>
+        )}
         {loading && <LoadingState message="正在汇总教学进度…" />}
         {!loading && error && <ErrorState title="加载失败" message={error} onRetry={() => setAttempt((v) => v + 1)} />}
-        {!loading && !error && groups.length === 0 && (
+        {!loading && !error && failures.length > 0 && (
+          <p className="notice-bar is-warn" role="status">
+            <b>部分教学班未能读取</b>
+            以下班级的进度汇总失败，其余结果仍然有效，可稍后刷新重试：
+            {failures.map((item) => `${item.className}（${item.message}）`).join('、')}
+          </p>
+        )}
+        {!loading && !error && groups.length === 0 && failures.length === 0 && (
           <EmptyState title="暂无教学进度" message="本学期还没有录入任何教学进度内容。" />
         )}
 
@@ -91,18 +126,24 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
                       <button className="kbtn ghost grade-view" type="button" onClick={() => setExpanded(open ? null : group.skbjdm || group.className)}>
                         {open ? '收起' : '展开'}
                       </button>
-                      <a
+                      <button
                         className="kbtn primary grade-view"
-                        href={api.progressPdfUrl(term, {
-                          kcdm: group.kcdm,
-                          bjdm: group.skbjdm,
-                          kcmc: group.courseName,
-                          courseName: group.courseName,
-                          className: group.className,
-                        })}
+                        type="button"
+                        onClick={() =>
+                          void download(
+                            api.progressPdfUrl(term, {
+                              kcdm: group.kcdm,
+                              bjdm: group.skbjdm,
+                              kcmc: group.courseName,
+                              courseName: group.courseName,
+                              className: group.className,
+                            }),
+                            `${group.courseName || group.className}_教学进度表.pdf`,
+                          )
+                        }
                       >
                         导出 PDF
-                      </a>
+                      </button>
                     </div>
                   </header>
                   <div className="pv-bar" role="presentation">

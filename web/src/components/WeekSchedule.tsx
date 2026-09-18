@@ -27,6 +27,7 @@ import { useNow } from '../lib/useNow';
 import type { Course, ScheduleData } from '../types';
 
 interface WeekScheduleProps {
+  userId: string;
   term: string;
   onUnauthorized: () => void;
 }
@@ -82,8 +83,9 @@ const LessonCard = memo(function LessonCard({ course, start, end, phase, extraCo
   );
 });
 
-export function WeekSchedule({ term, onUnauthorized }: WeekScheduleProps) {
+export function WeekSchedule({ term, userId, onUnauthorized }: WeekScheduleProps) {
   const [data, setData] = useState<ScheduleData | null>(null);
+  const [loadedTerm, setLoadedTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -101,6 +103,7 @@ export function WeekSchedule({ term, onUnauthorized }: WeekScheduleProps) {
       .then((payload) => {
         if (cancelled) return;
         setData(payload);
+        setLoadedTerm(term);
         const total = payload.totalWeeks || payload.maxWeek || 20;
         const start = parseSemesterStart(payload.semesterStart) ?? termStart(term);
         setViewWeek(currentWeekFrom(start, total) ?? 1);
@@ -174,7 +177,9 @@ export function WeekSchedule({ term, onUnauthorized }: WeekScheduleProps) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [totalWeeks]);
 
-  if (loading) {
+  const ready = data !== null && loadedTerm === term;
+
+  if (loading || (!ready && !error)) {
     return (
       <section className="section" aria-busy="true">
         <div className="panel-card">
@@ -196,7 +201,14 @@ export function WeekSchedule({ term, onUnauthorized }: WeekScheduleProps) {
 
   return (
     <>
+      {(data?.calendarEstimated !== false || data?.timesEstimated !== false) && (
+        <p className="notice-bar" role="status">
+          {data?.calendarEstimated !== false ? '教学周和日期按估算开学日计算，请按学校校历核对。' : '已使用配置的学校校历。'}
+          {data?.timesEstimated !== false && '作息使用默认时间，开课提醒仅供参考。'}
+        </p>
+      )}
       <HeroSection
+        userId={userId}
         teacher={data?.teacher ?? ''}
         xn={data?.xn}
         xq={data?.xq}
@@ -342,7 +354,6 @@ export function WeekSchedule({ term, onUnauthorized }: WeekScheduleProps) {
                                   extraCount={cellCourses.length - 1}
                                   onClick={() => setSelected(cellCourses)}
                                 />
-                                {cellCourses.length > 1 && <span className="lesson-more">+{cellCourses.length - 1}</span>}
                               </td>
                             );
                           })}

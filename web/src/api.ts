@@ -28,11 +28,20 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    credentials: 'same-origin',
-    headers: { Accept: 'application/json', ...((init.headers as Record<string, string> | undefined) ?? {}) },
-  });
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      ...init,
+      signal: init.signal ?? AbortSignal.timeout(120000),
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json', ...((init.headers as Record<string, string> | undefined) ?? {}) },
+    });
+  } catch (error) {
+    if (error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      throw new ApiError('请求超时或已取消，请检查网络后重试', 408);
+    }
+    throw new ApiError('无法连接后端服务，请确认服务已启动', 0);
+  }
 
   let payload: unknown = null;
   try {
@@ -47,6 +56,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError(message, response.status);
   }
 
+  if (payload === null) throw new ApiError('服务器返回了无效数据，请稍后重试', 502);
   return payload as T;
 }
 
@@ -55,7 +65,7 @@ export const api = {
   session: () => request<SessionData>('/api/session'),
   loginStart: () => request<LoginStart>('/api/login/start', { method: 'POST' }),
   loginStatus: () => request<LoginState>('/api/login/status'),
-  logout: () => request<{ ok: boolean }>('/api/logout', { method: 'POST' }),
+  logout: () => request<{ ok: boolean }>('/api/logout', { method: 'POST', signal: AbortSignal.timeout(5000) }),
   terms: () => request<TermsData>('/api/terms'),
   schedule: (term: string) => request<ScheduleData>(`/api/schedule?term=${encodeURIComponent(term)}`),
   feature: (feature: ModuleKey, term: string) => request<unknown>(`/api/${feature}?term=${encodeURIComponent(term)}`),

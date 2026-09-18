@@ -17,6 +17,7 @@ import { NextClassPanel } from './NextClassPanel';
 import type { Course } from '../types';
 
 interface HeroSectionProps {
+  userId: string;
   teacher: string;
   xn?: number;
   xq?: number;
@@ -30,6 +31,7 @@ interface HeroSectionProps {
 }
 
 export function HeroSection({
+  userId,
   teacher,
   xn,
   xq,
@@ -118,7 +120,7 @@ export function HeroSection({
         />
       )}
 
-      <MemoPanel />
+      {userId && <MemoPanel key={userId} userId={userId} />}
     </section>
   );
 }

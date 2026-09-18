@@ -1,8 +1,10 @@
+import { sessionAlive } from './sessionHealth.mjs';
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { extname, join, normalize } from 'node:path';
+import { extname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
+import { readJson, TOO_LARGE } from './readJson.mjs';
 import { config } from './config.mjs';
-import { contextFor, persistSession, dropContext, sweepSessions } from './sessionStore.mjs';
+import { contextFor, persistSession, rotateContext, dropContext, sweepSessions } from './sessionStore.mjs';
 import { getSchedule, getTasks, getTerms, getProgress, getGrades, getProgressClasses, getProgressEntry, buildProgressPayload, saveProgressEntry, getProgressCopyTerms, getProgressCopyClasses, copyProgressFromClass, getProgressSummary, buildProgressCsv, getRoster, buildRosterCsv, buildRosterReportHtml, buildRosterListHtml, getRosterPrintHtml, getCourseGradeClasses, getCourseGradesReport, exportCourseGradesPdf, exportCourseGradesExcel, exportProgressPdf } from './jwxt/index.mjs';
 
 function courseGradeParams(url, term) {
@@ -21,33 +23,74 @@ function courseGradeParams(url, term) {
   };
 }
 
-async function sessionAlive(ctx) {
-  if (!ctx.session) return false;
-  try {
-    // SetMainInfo.jsp 会输出当前登录账号；未登录时为 kingo.guest
-    const info = await ctx.session.text('/ahsljw/frame/home/js/SetMainInfo.jsp', { method: 'GET' });
-    if (info.status === 200) {
-      if (/kingo\.guest/i.test(info.text)) return false;
-      if (/_loginid\s*=\s*'[^']+'/.test(info.text)) return true;
+const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_MAX = 200;
+
+async function cached(ctx, key, fn) {
+  const now = Date.now();
+  const hit = ctx.cache.get(key);
+  if (hit && now - hit.at < CACHE_TTL) {
+    // 触发 LRU：把命中的键移到队尾
+    ctx.cache.delete(key);
+    ctx.cache.set(key, hit);
+    return hit.value;
+  }
+  if (hit) ctx.cache.delete(key);
+  // 合并同一会话内对相同键的并发请求，避免重复打上游
+  if (ctx.inflight.has(key)) return ctx.inflight.get(key);
+  const pending = (async () => {
+    try {
+      const value = await fn();
+      ctx.cache.set(key, { at: Date.now(), value });
+      while (ctx.cache.size > CACHE_MAX) {
+        const oldest = ctx.cache.keys().next().value;
+        if (oldest === undefined) break;
+        ctx.cache.delete(oldest);
+      }
+      return value;
+    } finally {
+      ctx.inflight.delete(key);
     }
-    if (!ctx.session.landingUrl) return false;
-    const res = await ctx.session.text(ctx.session.landingUrl, { method: 'GET' });
-    if (res.status !== 200) return false;
-    if (/cas\/login\.action|未登录|登录超时|重新登录|会话已过期/i.test(res.text)) return false;
-    return true;
+  })();
+  ctx.inflight.set(key, pending);
+  return pending;
+}
+
+// 登录限流：按来源 IP 限制 /api/login/start 的频率，避免匿名请求刷接口。
+const LOGIN_WINDOW = 5 * 60 * 1000;
+const LOGIN_MAX = 10;
+const loginHits = new Map();
+
+function loginAllowed(ip) {
+  const now = Date.now();
+  const hits = (loginHits.get(ip) || []).filter((at) => now - at < LOGIN_WINDOW);
+  if (hits.length >= LOGIN_MAX) {
+    loginHits.set(ip, hits);
+    return false;
+  }
+  hits.push(now);
+  loginHits.set(ip, hits);
+  if (loginHits.size > 1000) {
+    const oldest = loginHits.keys().next().value;
+    if (oldest !== undefined) loginHits.delete(oldest);
+  }
+  return true;
+}
+
+// 写请求的 Origin 校验：同源（含 localhost 不同端口）或缺失 Origin 时放行。
+function originAllowed(req) {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  let host;
+  try {
+    host = new URL(origin).host;
   } catch {
     return false;
   }
-}
-
-const CACHE_TTL = 5 * 60 * 1000;
-
-async function cached(ctx, key, fn) {
-  const hit = ctx.cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_TTL) return hit.value;
-  const value = await fn();
-  ctx.cache.set(key, { at: Date.now(), value });
-  return value;
+  const target = req.headers.host || '';
+  if (host === target) return true;
+  const local = /^(localhost|127\.0\.0\.1)(:\d+)?$/;
+  return local.test(host) && local.test(target);
 }
 
 function json(res, status, payload) {
@@ -79,15 +122,28 @@ const WEB_DIST = process.env.WEB_DIST || join(config.root, 'web', 'dist');
 function serveStatic(res, pathname) {
   if (!existsSync(WEB_DIST)) return false;
   if (pathname.startsWith('/api/')) return false;
-  const relative = normalize(decodeURIComponent(pathname)).replace(/^([/\\])+/, '');
-  let filePath = join(WEB_DIST, relative);
-  if (!filePath.startsWith(WEB_DIST)) return false;
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    json(res, 400, { error: '无效的请求地址' });
+    return true;
+  }
+  const relativePath = normalize(decoded).replace(/^([/\\])+/, '');
+  const resolved = resolve(WEB_DIST, relativePath);
+  const inside = relative(WEB_DIST, resolved);
+  if (inside.startsWith('..') || isAbsolute(inside)) return false;
+  let filePath = resolved;
   if (!existsSync(filePath) || !statSync(filePath).isFile()) {
     filePath = join(WEB_DIST, 'index.html');
     if (!existsSync(filePath)) return false;
   }
   const body = readFileSync(filePath);
-  res.writeHead(200, { 'Content-Type': MIME[extname(filePath).toLowerCase()] || 'application/octet-stream' });
+  const cacheControl = filePath.includes(`${sep}assets${sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache';
+  res.writeHead(200, {
+    'Content-Type': MIME[extname(filePath).toLowerCase()] || 'application/octet-stream',
+    'Cache-Control': cacheControl,
+  });
   res.end(body);
   return true;
 }
@@ -98,25 +154,13 @@ function allowCors(req, res) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Vary', 'Origin');
   }
 }
 
-function readJson(req) {
-  return new Promise((resolve) => {
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk;
-      if (body.length > 4 * 1024 * 1024) req.destroy();
-    });
-    req.on('end', () => {
-      try {
-        resolve(JSON.parse(body || '{}'));
-      } catch {
-        resolve(null);
-      }
-    });
-    req.on('error', () => resolve(null));
-  });
+function clearCache(ctx) {
+  ctx.cache.clear();
+  ctx.inflight.clear();
 }
 
 async function ensureSession(ctx) {
@@ -129,11 +173,16 @@ async function ensureSession(ctx) {
 }
 
 const server = createServer(async (req, res) => {
-  const url = new URL(req.url || '/', 'http://localhost');
+  let url;
+  try { url = new URL(req.url || '/', 'http://localhost'); }
+  catch { return json(res, 400, { error: '无效的请求地址' }); }
   allowCors(req, res);
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     return res.end();
+  }
+  if (req.method === 'POST' && !originAllowed(req)) {
+    return json(res, 403, { error: '请求来源不被允许' });
   }
   let ctx = null;
   try {
@@ -148,6 +197,10 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/login/start' && req.method === 'POST') {
+      if (!ctx) return json(res, 400, { error: '无效的会话，请刷新页面重试' });
+      if (!loginAllowed(req.socket?.remoteAddress || 'unknown')) {
+        return json(res, 429, { error: '二维码生成过于频繁，请稍后再试' });
+      }
       return json(res, 200, await ctx.loginFlow.start());
     }
 
@@ -157,8 +210,9 @@ const server = createServer(async (req, res) => {
         const flowSession = ctx.loginFlow.getSession();
         if (ctx.session !== flowSession) {
           ctx.session = flowSession;
+          rotateContext(ctx, res);
           persistSession(ctx);
-          ctx.cache.clear();
+          clearCache(ctx);
         }
       }
       return json(res, 200, { status, message, username });
@@ -256,10 +310,12 @@ const server = createServer(async (req, res) => {
     if (url.pathname === '/api/progress/entry' && req.method === 'POST') {
       const s = await ensureSession(ctx);
       const body = await readJson(req);
-      if (!body || !body.term || !body.meta || !Array.isArray(body.rows)) {
+      if (body === TOO_LARGE) return json(res, 413, { error: '请求体过大' });
+      if (!body || !/^\d{4},[01]$/.test(body.term) || !body.meta || typeof body.meta !== 'object' || Array.isArray(body.meta) || !Array.isArray(body.rows) || body.rows.length > 500 || body.rows.some((row) => !row || typeof row !== 'object' || Array.isArray(row))) {
         return json(res, 400, { error: '请求体需要 term / meta / rows' });
       }
-      if (!body.confirm) {
+      if (body.confirm !== undefined && typeof body.confirm !== 'boolean') return json(res, 400, { error: 'confirm 必须为布尔值' });
+      if (body.confirm !== true) {
         return json(res, 200, {
           preview: true,
           payload: buildProgressPayload(body.meta, body.rows, body.formFields || {}, body.tjflag || '1', body.xqskzs || ''),
@@ -267,7 +323,7 @@ const server = createServer(async (req, res) => {
         });
       }
       const result = await saveProgressEntry(s, body.term, body.meta, body.rows, body.formFields || {}, body.tjflag || '1', body.xqskzs || '');
-      ctx.cache.clear();
+      clearCache(ctx);
       return json(res, 200, result);
     }
 
@@ -574,4 +630,9 @@ server.listen(config.port, process.env.HOST || '127.0.0.1', () => {
   console.log(`[api] http://${process.env.HOST || '127.0.0.1'}:${config.port}`);
   sweepSessions();
   setInterval(sweepSessions, 60 * 60 * 1000).unref();
+});
+
+server.on('error', (error) => {
+  console.error(`[api] 启动失败：${error instanceof Error ? error.message : error}`);
+  process.exitCode = 1;
 });

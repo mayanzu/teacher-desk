@@ -1,4 +1,4 @@
-import { parseTable, clean, parseTerm, gbkFormEncode } from './common.mjs';
+import { parseTable, clean, parseTerm, gbkFormEncode, doubleEncode, safeFileName, requireDownload, requirePage, csvCell } from './common.mjs';
 
 export async function getProgress(session, term) {
   const { xn, xq } = parseTerm(term);
@@ -8,6 +8,7 @@ export async function getProgress(session, term) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
     body: `xn=${xn}&xn1=${xn}&xq=${xq}&xq_m=${xq}&kchj=1&gs=1&kcmc=&skbjdm=&ysh=&xysh=&bjmc=&kcmctxt=`,
   });
+  requirePage(res, /<table|暂无|无记录/i, '教学进度');
   const rows = parseTable(res.text);
   const items = rows
     .filter((row) => /^\d+$/.test((row[0] || '').trim()) && row.length >= 15)
@@ -144,10 +145,12 @@ export async function getProgressClasses(session, term) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
     body: `${progressBody(xn, xq)}&kchj=1&hidKey=&hidOption=&rad_lrqk=0&xwly=&xwlw=&xwsh=`,
   });
+  requirePage(res, /<table|暂无|无记录/i, '教学进度');
   const rows = parseTable(res.text);
   const args = parseDoAddArgs(res.text);
   const headerIndex = rows.findIndex((row) => row.some((c) => /课程/.test(c)) && row.some((c) => /审核/.test(c)));
-  const headers = headerIndex >= 0 ? rows[headerIndex] : [];
+  if (headerIndex < 0) throw Object.assign(new Error('教学班列表页面结构异常'), { status: 502 });
+  const headers = rows[headerIndex];
   const items = [];
   let argIndex = 0;
   for (const row of rows.slice(headerIndex + 1)) {
@@ -196,6 +199,7 @@ export async function getProgressEntry(session, term, params) {
     meta[m[1]] = m[2];
   }
 
+  if (!Object.keys(meta).length) throw Object.assign(new Error('教学进度表单结构异常，请重新加载'), { status: 502 });
   const formFields = {};
   for (const m of form.text.matchAll(/<input\b[^>]*>/gi)) {
     const tag = m[0];
@@ -211,6 +215,7 @@ export async function getProgressEntry(session, term, params) {
   const gridTables = [PROGRESS_GRID_TABLE, '5929112', '5929131', '5929365', '5929137'];
   let rows = [];
   let gridTable = gridTables[0];
+  const gridResponses = [];
   for (const tableId of gridTables) {
     const grid = await session.text(`/ahsljw/taglib/DataTable_utf8.jsp?tableId=${tableId}&hidOption=`, {
       method: 'POST',
@@ -218,11 +223,20 @@ export async function getProgressEntry(session, term, params) {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
       body: gridBody,
     });
+    gridTable = tableId;
+    gridResponses.push(grid.text);
     const parsed = parseGridRows(grid.text);
     if (parsed.length) {
       rows = parsed;
-      gridTable = tableId;
       break;
+    }
+  }
+  if (!rows.length) {
+    const emptyMarker = gridResponses.some((text) => /暂无|无记录|没有|无数据/i.test(text));
+    const trivial = gridResponses.every((text) => text.replace(/<[^>]*>/g, '').replace(/\s+/g, '').length < 100);
+    const hasStructure = gridResponses.some((text) => /<t[dr]\b|<table/i.test(text));
+    if (hasStructure && !emptyMarker && !trivial) {
+      throw Object.assign(new Error('教学进度表格结构异常，请稍后重试或联系教务确认'), { status: 502 });
     }
   }
   let xqskzs = '';
@@ -233,8 +247,7 @@ export async function getProgressEntry(session, term, params) {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
       body: `xn=${xn}&xq_m=${xq}`,
     });
-    const match = zs.text.match(/"?(\d{1,2})"?/);
-    if (match) xqskzs = match[1];
+    xqskzs = parseXqskzs(zs.text);
   } catch {
     /* 忽略：使用默认周数 */
   }
@@ -248,6 +261,25 @@ export async function getProgressEntry(session, term, params) {
   };
 
   return { meta, formFields, rows, gridTable, xqskzs, totals, xn, xq };
+}
+
+/** 严格解析“本学期课周数”响应：只接受纯数字或 JSON 中的 xqskzs 字段。 */
+export function parseXqskzs(text) {
+  const trimmed = String(text ?? '').trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (typeof parsed === 'number' || typeof parsed === 'string') {
+      return /^\d{1,2}$/.test(String(parsed).trim()) ? String(parsed).trim() : '';
+    }
+    const value = parsed && typeof parsed === 'object' ? parsed.xqskzs : undefined;
+    if (value !== undefined && /^\d{1,2}$/.test(String(value).trim())) return String(value).trim();
+    return '';
+  } catch {
+    /* 非 JSON，按纯数字处理 */
+  }
+  const match = trimmed.match(/^"?(\d{1,2})"?$/);
+  return match ? match[1] : '';
 }
 
 export function buildProgressPayload(meta, rows, formFields = {}, tjflag = '1', xqskzs = '') {
@@ -287,7 +319,7 @@ export function buildProgressPayload(meta, rows, formFields = {}, tjflag = '1', 
     deleteIds: '',
     xqskzs: xqskzs || formFields.xqskzs || '',
     sjctflag: '0',
-    pklb: '0',
+    pklb: formFields.pklb || meta.pklb || '0',
     nskbjmc: '',
     menucode_current: '',
     btnPrint: '打印',
@@ -313,11 +345,11 @@ export function buildProgressPayload(meta, rows, formFields = {}, tjflag = '1', 
     qtxss: arr((r) => r.otherHours),
     xzxss: arr(() => ''),
     jsnrs: txt((r) => r.content),
-    jsnr_zs: txt(() => ''),
-    jsnr_js: txt(() => ''),
-    yqs: txt(() => ''),
-    zys: txt(() => ''),
-    bzs: txt(() => ''),
+    jsnr_zs: txt((r) => r.contentZ),
+    jsnr_js: txt((r) => r.contentJ),
+    yqs: txt((r) => r.requirement),
+    zys: txt((r) => r.homework),
+    bzs: txt((r) => r.remark),
     sjjsnrs: arr((r) => raw(r, 'sjjsnr')),
     cdxss: arr((r) => raw(r, 'cdxs')),
     qjxss: arr((r) => raw(r, 'qjxs')),
@@ -370,7 +402,7 @@ async function dropList(session, referer, comboBoxName, paramValue) {
     const list = JSON.parse(res.text);
     return Array.isArray(list) ? list.map((item) => ({ code: String(item.code ?? ''), name: String(item.name ?? '') })) : [];
   } catch {
-    return [];
+    throw Object.assign(new Error('复制来源响应异常，请重试'), { status: 502 });
   }
 }
 
@@ -401,8 +433,12 @@ export async function copyProgressFromClass(session, xnxq, kcdm, sourceSkbjdm) {
     },
   );
   const pick = (block, tag) => block.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`))?.[1] ?? '';
+  const blocks = [...res.text.matchAll(/<kcjdb>([\s\S]*?)<\/kcjdb>/g)];
+  if (!blocks.length && (res.status !== 200 || /登录|登陆|login|错误|异常|error/i.test(res.text))) {
+    throw Object.assign(new Error('复制来源读取失败，请重试'), { status: 502 });
+  }
   const items = [];
-  for (const m of res.text.matchAll(/<kcjdb>([\s\S]*?)<\/kcjdb>/g)) {
+  for (const m of blocks) {
     items.push({
       content: pick(m[1], 'nr'),
       mode: pick(m[1], 'skfs'),
@@ -426,6 +462,7 @@ export async function getProgressCourses(session, term) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
     body: `xn=${xn}&xn1=${xn}&xq=${xq}&xq_m=${xq}&kchj=1&gs=1&kcmc=&skbjdm=&ysh=&xysh=&bjmc=&kcmctxt=`,
   });
+  requirePage(res, /<table|暂无|无记录/i, '教学进度');
   const rows = parseTable(res.text);
   const headerIndex = rows.findIndex((row) => row.includes('课程') && row.some((cell) => /班级|教师/.test(cell)));
   if (headerIndex < 0) return [];
@@ -447,19 +484,18 @@ export async function getProgressCourses(session, term) {
 
 export async function getProgressSummary(session, term) {
   // 当前学期：按“录入教学班”聚合，课程维度准确
-  let classes = { items: [] };
-  try {
-    classes = await getProgressClasses(session, term);
-  } catch {
-    classes = { items: [] };
-  }
+  const classes = await getProgressClasses(session, term);
   if (classes.items.length) {
     const items = [];
+    const failures = [];
     for (const item of classes.items) {
       let entry;
       try {
         entry = await getProgressEntry(session, term, item.params);
-      } catch {
+      } catch (error) {
+        // 登录失效必须整体失败，其余班级异常只记录并继续
+        if (error?.status === 401) throw error;
+        failures.push({ className: item.className || item.classCode, message: error instanceof Error ? error.message : '加载失败' });
         continue;
       }
       if (!entry.rows.length) continue;
@@ -481,9 +517,9 @@ export async function getProgressSummary(session, term) {
         })),
       });
     }
-    if (items.length) {
+    if (items.length || failures.length) {
       items.sort((a, b) => b.count - a.count);
-      return { items };
+      return { items, failures };
     }
   }
 
@@ -523,14 +559,13 @@ export async function getProgressSummary(session, term) {
     };
   });
   items.sort((a, b) => b.count - a.count);
-  return { items };
+  return { items, failures: [] };
 }
 
 export function buildProgressCsv(rows) {
-  const escape = (value) => `"${String(value ?? '').replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`;
   const header = ['周次', '日期', '节次', '上课班级', '地点', '授课内容'];
-  const lines = rows.map((row) => [row.week, row.date, row.period, row.classNames, row.room, row.content].map(escape).join(','));
-  return `\uFEFF${header.map(escape).join(',')}\r\n${lines.join('\r\n')}`;
+  const lines = rows.map((row) => [row.week, row.date, row.period, row.classNames, row.room, row.content].map(csvCell).join(','));
+  return `\uFEFF${header.map(csvCell).join(',')}\r\n${lines.join('\r\n')}`;
 }
 
 export async function exportProgressPdf(session, params) {
@@ -570,11 +605,11 @@ export async function exportProgressPdf(session, params) {
   }
   const [fileName, fileSavePath] = String(data.result).split(';;');
   const dl = await session.request(
-    `/ahsljw/frame/pdf?method=download&title=${doubleEncode(fileName)}&fileSavePath=${fileSavePath}`,
+    `/ahsljw/frame/pdf?method=download&title=${doubleEncode(fileName)}&fileSavePath=${encodeURIComponent(fileSavePath)}`,
     { method: 'GET', referer: `${session.base}/ahsljw/frame/pdf?method=topdf` },
   );
   const parts = [params.courseName, params.className, all ? '学期教学进度表' : '教学进度表'].filter(Boolean);
   const filename = `${safeFileName(parts.join('_'), '教学进度表')}.pdf`;
-  return { filename, buffer: dl.buffer };
+  return { filename, buffer: requireDownload(dl, 'pdf') };
 }
 

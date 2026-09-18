@@ -17,9 +17,10 @@ export async function getTerms(session) {
   const list = (() => {
     try {
       const parsed = JSON.parse(res.text);
-      return Array.isArray(parsed) ? parsed : [];
+      if (!Array.isArray(parsed)) throw new Error('invalid terms');
+      return parsed;
     } catch {
-      return [];
+      throw Object.assign(new Error('学期列表响应异常，请重试'), { status: 502 });
     }
   })();
   let terms = list

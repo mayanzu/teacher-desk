@@ -18,10 +18,12 @@ export function LoginPage({ onLoggedIn }: LoginPageProps) {
   const [error, setError] = useState('');
   const [remaining, setRemaining] = useState(0);
   const [attempt, setAttempt] = useState(0);
+  const startId = useRef(0);
   const loggedInRef = useRef(onLoggedIn);
   loggedInRef.current = onLoggedIn;
 
   const start = useCallback(async () => {
+    const token = ++startId.current;
     setPhase('starting');
     setError('');
     setMessage('正在生成二维码…');
@@ -29,11 +31,13 @@ export function LoginPage({ onLoggedIn }: LoginPageProps) {
     setRemaining(0);
     try {
       const payload = await api.loginStart();
+      if (token !== startId.current) return;
       setQrDataUrl(payload.qrDataUrl);
       setRemaining(Math.max(0, Math.round(payload.expiresIn)));
       setPhase('waiting');
       setMessage('等待使用「喜鹊儿」App 扫码…');
     } catch (err) {
+      if (token !== startId.current) return;
       setPhase('error');
       setError(errorMessage(err));
       setMessage('二维码生成失败');
@@ -42,6 +46,7 @@ export function LoginPage({ onLoggedIn }: LoginPageProps) {
 
   useEffect(() => {
     void start();
+    return () => { startId.current += 1; };
   }, [attempt, start]);
 
   useEffect(() => {

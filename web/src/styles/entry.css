@@ -9,7 +9,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: 1460px;
+  max-width: var(--layout-width);
   margin: auto;
   padding: 38px 28px 0;
 }
@@ -43,7 +43,7 @@
   color: var(--secondary);
   background: transparent;
   border: 2px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   font: 900 14px var(--font);
   white-space: nowrap;
   transition: background .16s ease, color .16s ease, box-shadow .16s ease;
@@ -62,7 +62,7 @@
 .entry-classes {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
   margin-bottom: 16px;
 }
 
@@ -85,8 +85,8 @@
 .entry-class:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
 .entry-class.is-active { background: var(--yellow-soft); }
 
-.entry-class strong { font-size: 14px; font-weight: 900; line-height: 1.35; }
-.entry-class span { font-size: 12px; font-weight: 700; color: var(--secondary); }
+.entry-class strong { font-size: var(--text-body); font-weight: 900; line-height: 1.35; }
+.entry-class span { font-size: var(--text-small); font-weight: 700; color: var(--secondary); }
 
 /* ---------- 录入表单控件 ---------- */
 .entry-input {
@@ -96,8 +96,9 @@
   color: inherit;
   background: var(--paper-2);
   border: 2px solid var(--ink);
-  border-radius: 10px;
-  font: 700 13px var(--font);
+  border-radius: var(--radius-control);
+  font: 400 var(--text-body)/1.6 var(--font);
+  min-height: 44px;
   resize: vertical;
 }
 
@@ -109,7 +110,7 @@
   margin-bottom: 12px;
 }
 
-.entry-toolbar-label { font-size: 13px; font-weight: 900; color: var(--secondary); }
+.entry-toolbar-label { font-size: var(--text-body); font-weight: 900; color: var(--secondary); }
 
 .entry-copy-panel {
   margin-bottom: 14px;
@@ -122,19 +123,22 @@
 .entry-copy-term {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 8px;
-  font-size: 12.5px;
+  font-size: var(--text-small);
   font-weight: 800;
 }
 
 .entry-copy-term select {
-  min-height: 38px;
+  min-height: 44px;
+  min-width: 0;
+  max-width: 100%;
   padding: 0 10px;
   color: inherit;
   background: var(--paper-2);
   border: 2px solid var(--ink);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   box-shadow: 2px 2px 0 var(--yellow);
   font: 800 13px var(--font);
   cursor: pointer;
@@ -165,19 +169,19 @@
 }
 
 .entry-copy-item:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
-.entry-copy-item strong { font-size: 13px; font-weight: 900; }
-.entry-copy-item span { font-size: 12px; font-weight: 700; color: var(--secondary); }
+.entry-copy-item strong { font-size: var(--text-body); font-weight: 900; }
+.entry-copy-item span { font-size: var(--text-small); font-weight: 700; color: var(--secondary); }
 
-.entry-copy-empty { margin: 10px 0 0; font-size: 12.5px; font-weight: 700; color: var(--secondary); }
+.entry-copy-empty { margin: 10px 0 0; font-size: var(--text-small); font-weight: 700; color: var(--secondary); }
 
 .entry-totals {
   margin: 0 0 12px;
   padding: 10px 14px;
   background: var(--yellow-soft);
   border: 2px solid var(--ink);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   box-shadow: 2px 2px 0 var(--ink);
-  font-size: 12.5px;
+  font-size: var(--text-small);
   font-weight: 800;
 }
 
@@ -196,13 +200,27 @@
   padding: 10px 14px;
   background: var(--blue-soft);
   border: 2px solid var(--ink);
-  border-radius: 10px;
-  font-size: 12.5px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-small);
   font-weight: 800;
 }
 
+.entry-notice.is-success { color: var(--ok); background: var(--ok-bg); }
+.entry-notice.is-error { color: var(--red-strong); background: var(--warn-bg); }
+
 /* ---------- 录入表格：撑开滚动容器，窄屏横向滚动不破卡 ---------- */
-.entry-table { min-width: 760px; }
+.entry-table { min-width: 920px; }
+.entry-table th:nth-child(-n+3),
+.entry-table td:nth-child(-n+3) { white-space: nowrap; }
+.entry-table th:first-child,
+.entry-table td:first-child { position: sticky; left: 0; box-shadow: 1px 0 0 var(--line-soft); }
+.entry-table td:first-child { z-index: 1; color: var(--ink); font-weight: 700; }
+.entry-table th:nth-child(4) { width: 48%; }
+.entry-table th:nth-child(5) { width: 24%; }
+.entry-table .entry-input { background: var(--paper-2); border-color: var(--line-soft); }
+.entry-table .entry-input:hover { border-color: var(--secondary); }
+.entry-table .entry-input:focus { border-color: var(--ink); }
+.entry-table textarea { display: block; min-height: 88px; }
 .entry-table th,
 .entry-table td { vertical-align: middle; }
 
@@ -213,7 +231,7 @@
   padding: 16px 18px;
   background: var(--paper-2);
   border: 3px solid var(--ink);
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   box-shadow: 4px 4px 0 var(--ink);
 }
 
@@ -225,8 +243,8 @@
   gap: 12px;
 }
 
-.pv-head h3 { margin: 0; font-size: 15px; font-weight: 1000; letter-spacing: -.02em; }
-.pv-meta { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: var(--secondary); }
+.pv-head h3 { margin: 0; font-size: 15px; font-weight: 900; letter-spacing: -.02em; }
+.pv-meta { margin: 4px 0 0; font-size: var(--text-small); font-weight: 700; color: var(--secondary); }
 .pv-actions { display: flex; flex-wrap: wrap; gap: 8px; flex: none; }
 
 .pv-bar {
@@ -250,21 +268,21 @@
 
 .pv-weeks li {
   display: grid;
-  grid-template-columns: 62px 92px 58px 1fr;
+  grid-template-columns: 62px 100px 64px minmax(0, 1fr);
   gap: 8px;
   align-items: baseline;
   padding: 7px 10px;
   background: var(--paper-2);
   border: 2px solid var(--line-soft);
-  border-radius: 10px;
-  font-size: 12.5px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-small);
   font-weight: 700;
 }
 
 .pv-week { font-weight: 900; }
 .pv-date,
 .pv-period { color: var(--secondary); }
-.pv-content { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-content { min-width: 0; overflow-wrap: anywhere; white-space: normal; line-height: 1.7; font-weight: 400; }
 
 /* ---------- 教学任务 · 学生点名册 ---------- */
 .roster-block {
@@ -273,12 +291,12 @@
   border-top: 2px dashed var(--ink);
 }
 
-.roster-title { margin: 0 0 12px; font-size: 15px; font-weight: 1000; letter-spacing: -.02em; }
+.roster-title { margin: 0 0 12px; font-size: 15px; font-weight: 900; letter-spacing: -.02em; }
 
 .roster-grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
 }
 
 .roster-item {
@@ -295,9 +313,9 @@
 
 .roster-item > div { flex: 1 1 150px; min-width: 0; }
 .roster-item > a:first-of-type { margin-left: auto; }
-.roster-item strong { display: block; font-size: 13px; font-weight: 900; }
-.roster-item span { font-size: 12px; font-weight: 700; color: var(--secondary); }
-.roster-item .kbtn { min-height: 36px; padding: 7px 12px; font-size: 12.5px; }
+.roster-item strong { display: block; font-size: var(--text-body); font-weight: 900; }
+.roster-item span { font-size: var(--text-small); font-weight: 700; color: var(--secondary); }
+.roster-item .kbtn { min-height: 44px; padding: 7px 12px; font-size: var(--text-small); }
 .roster-item .roster-actions {
   flex: none;
   display: flex;
@@ -317,7 +335,7 @@
 @media (max-width: 760px) {
   .subpage { gap: 12px; }
   .subtabs { width: 100%; }
-  .subtab { flex: 1 1 0; padding: 8px 10px; font-size: 13px; }
+  .subtab { flex: 1 1 0; padding: 8px 10px; font-size: var(--text-body); }
   .entry-copy-panel { padding: 12px; }
   .pv-card { padding: 14px; border-width: 3px; }
 }

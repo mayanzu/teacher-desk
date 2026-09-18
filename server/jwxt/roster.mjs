@@ -1,4 +1,4 @@
-import { parseTable, clean, parseTerm, gbkFormEncode } from './common.mjs';
+import { parseTable, clean, parseTerm, gbkFormEncode, csvCell, csvTextNumber, formulaSafeText } from './common.mjs';
 
 export async function getRoster(session, term, kcdm, skbjdm) {
   const { xn, xq } = parseTerm(term);
@@ -22,14 +22,17 @@ export async function getRoster(session, term, kcdm, skbjdm) {
   const rows = parseTable(res.text);
   const headerIndex = rows.findIndex((row) => row.includes('学号'));
   if (headerIndex < 0) {
-    throw new Error('点名册数据获取失败（登录态可能已过期，请重新扫码）');
+    const loginLike = res.status === 200 && /登录|登陆|统一身份|cas|login/i.test(res.text);
+    throw Object.assign(
+      new Error(loginLike ? '登录状态已过期，请重新扫码' : '点名册页面结构异常，请稍后重试'),
+      { status: loginLike ? 401 : 502 },
+    );
   }
   const items = [];
   for (const row of rows.slice(headerIndex + 1)) {
     const studentId = String(row[2] ?? '').trim();
     const name = String(row[3] ?? '').trim();
-    if (!name) continue;
-    if (!/^\d{6,}$/.test(studentId)) continue;
+    if (!name && !studentId) continue;
     items.push({
       index: row[0] ?? '',
       className: row[1] ?? '',
@@ -39,36 +42,38 @@ export async function getRoster(session, term, kcdm, skbjdm) {
       college: row[5] ?? '',
       major: row[6] ?? '',
       type: row[7] ?? '',
-      remark: row[9] ?? '',
+      remark: String(row[9] ?? row[8] ?? '').trim(),
     });
   }
   return { items };
 }
 
 export function buildRosterCsv(items) {
-  const escape = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
   const header = ['序号', '行政班级', '学号', '姓名', '性别', '学院', '专业', '修读性质', '备注'];
   const lines = items.map((item) =>
-    [item.index, item.className, item.studentId, item.name, item.gender, item.college, item.major, item.type, item.remark].map(escape).join(','),
+    [csvCell(item.index), csvCell(item.className), csvTextNumber(item.studentId), csvCell(item.name), csvCell(item.gender), csvCell(item.college), csvCell(item.major), csvCell(item.type), csvCell(item.remark)].join(','),
   );
-  return `\uFEFF${header.map(escape).join(',')}\r\n${lines.join('\r\n')}`;
+  return `\uFEFF${header.map(csvCell).join(',')}\r\n${lines.join('\r\n')}`;
 }
 
-let printCssCache = null;
+const PRINT_CSS_TTL = 30 * 60 * 1000;
+const printCssCache = new WeakMap();
 
 async function getPrintCss(session) {
-  if (printCssCache === null) {
-    try {
-      const res = await session.text('/ahsljw/css/Print.css', {
-        method: 'GET',
-        referer: `${session.base}/ahsljw/wjstgdfw/cjlr.dycddjc.fkcaskbjdyskdmc_rpt.jsp`,
-      });
-      printCssCache = res.status === 200 ? res.text : '';
-    } catch {
-      printCssCache = '';
-    }
+  const hit = printCssCache.get(session);
+  if (hit && Date.now() - hit.at < PRINT_CSS_TTL) return hit.css;
+  let css = '';
+  try {
+    const res = await session.text('/ahsljw/css/Print.css', {
+      method: 'GET',
+      referer: `${session.base}/ahsljw/wjstgdfw/cjlr.dycddjc.fkcaskbjdyskdmc_rpt.jsp`,
+    });
+    css = res.status === 200 ? res.text : '';
+  } catch {
+    css = '';
   }
-  return printCssCache;
+  printCssCache.set(session, { at: Date.now(), css });
+  return css;
 }
 
 export async function getRosterPrintHtml(session, term, kcdm, skbjdm) {
@@ -148,13 +153,13 @@ export function buildRosterListHtml({
   const rows = items
     .map(
       (item, index) => `<tr>
-<td class="c">${clean(item.index) || index + 1}</td>
-<td class="c">${clean(item.studentId)}</td>
-<td class="c">${clean(item.name)}</td>
-<td class="c">${clean(item.gender)}</td>
-<td class="c">${clean(item.type)}</td>
-<td class="c">${clean(item.major)}</td>
-<td class="c">${clean(item.remark)}</td>
+<td class="c">${formulaSafeText(item.index) || index + 1}</td>
+<td class="c">${formulaSafeText(item.studentId)}</td>
+<td class="c">${formulaSafeText(item.name)}</td>
+<td class="c">${formulaSafeText(item.gender)}</td>
+<td class="c">${formulaSafeText(item.type)}</td>
+<td class="c">${formulaSafeText(item.major)}</td>
+<td class="c">${formulaSafeText(item.remark)}</td>
 </tr>`,
     )
     .join('');
@@ -267,16 +272,16 @@ ${weekNumbers.map(() => `<col style="width:${weekWidth}%"/>`).join('')}
   const rows = items
     .map(
       (item) => `<tr>
-\t\t\t\t<td style="text-align: center;">${clean(item.index)}</td>
-\t\t\t\t<td>${clean(item.className)}</td>
-\t\t\t\t<td>${clean(item.studentId)}</td>
-\t\t\t\t<td>${clean(item.name)}</td>
-\t\t\t\t<td style="text-align: center;">${clean(item.gender)}</td>
-\t\t\t\t<td>${clean(item.college)}</td>
-\t\t\t\t<td>${clean(item.major)}</td>
-\t\t\t\t<td style="text-align: center;">${clean(item.type)}</td>
+\t\t\t\t<td style="text-align: center;">${formulaSafeText(item.index)}</td>
+\t\t\t\t<td>${formulaSafeText(item.className)}</td>
+\t\t\t\t<td>${formulaSafeText(item.studentId)}</td>
+\t\t\t\t<td>${formulaSafeText(item.name)}</td>
+\t\t\t\t<td style="text-align: center;">${formulaSafeText(item.gender)}</td>
+\t\t\t\t<td>${formulaSafeText(item.college)}</td>
+\t\t\t\t<td>${formulaSafeText(item.major)}</td>
+\t\t\t\t<td style="text-align: center;">${formulaSafeText(item.type)}</td>
 ${weekNumbers.map(() => '\t\t\t\t<td></td>').join('\n')}
-\t\t\t\t<td>${clean(item.remark)}</td>
+\t\t\t\t<td>${formulaSafeText(item.remark)}</td>
 \t\t\t</tr>`,
     )
     .join('\n');

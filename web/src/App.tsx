@@ -15,11 +15,24 @@ export default function App() {
   const [bootAttempt, setBootAttempt] = useState(0);
   const [session, setSession] = useState<SessionData>({ loggedIn: false, username: '' });
   const [terms, setTerms] = useState<Term[]>([]);
+  const [termsAttempt, setTermsAttempt] = useState(0);
   const [termsError, setTermsError] = useState('');
   const [termsFallback, setTermsFallback] = useState(false);
   const [term, setTerm] = useState('');
   const [page, setPage] = useState<PageKey>('schedule');
   const [loggingOut, setLoggingOut] = useState(false);
+  const [termsLoading, setTermsLoading] = useState(false);
+  const [progressDirty, setProgressDirty] = useState(false);
+
+  const resetSessionState = useCallback(() => {
+    setSession({ loggedIn: false, username: '' });
+    setTerms([]);
+    setTerm('');
+    setTermsError('');
+    setTermsFallback(false);
+    setProgressDirty(false);
+    setPage('schedule');
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,7 +61,7 @@ export default function App() {
       void (async () => {
         try {
           const current = await api.session();
-          if (!cancelled && !current.loggedIn) setSession({ loggedIn: false, username: '' });
+          if (!cancelled && !current.loggedIn) resetSessionState();
         } catch {
           /* 网络抖动忽略，等下次心跳 */
         }
@@ -58,12 +71,13 @@ export default function App() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [session.loggedIn]);
+  }, [session.loggedIn, resetSessionState]);
 
   useEffect(() => {
     if (!session.loggedIn) return;
     let cancelled = false;
     setTermsError('');
+    setTermsLoading(true);
     (async () => {
       try {
         const payload = await api.terms();
@@ -77,16 +91,18 @@ export default function App() {
       } catch (err) {
         if (cancelled) return;
         if (isUnauthorized(err)) {
-          setSession({ loggedIn: false, username: '' });
+          resetSessionState();
           return;
         }
         setTermsError(errorMessage(err));
+      } finally {
+        if (!cancelled) setTermsLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [session.loggedIn]);
+  }, [session.loggedIn, termsAttempt, resetSessionState]);
 
   const handleLoggedIn = useCallback(async () => {
     try {
@@ -98,11 +114,8 @@ export default function App() {
   }, []);
 
   const handleUnauthorized = useCallback(() => {
-    setSession({ loggedIn: false, username: '' });
-    setTerms([]);
-    setTerm('');
-    setTermsFallback(false);
-  }, []);
+    resetSessionState();
+  }, [resetSessionState]);
 
   const handleLogout = useCallback(async () => {
     setLoggingOut(true);
@@ -111,14 +124,29 @@ export default function App() {
     } catch {
       /* 服务端不可用时也要让本地退出 */
     }
-    setSession({ loggedIn: false, username: '' });
-    setTerms([]);
-    setTerm('');
-    setTermsError('');
-    setTermsFallback(false);
-    setPage('schedule');
+    resetSessionState();
     setLoggingOut(false);
-  }, []);
+  }, [resetSessionState]);
+
+  const handleTermChange = useCallback(
+    (next: string) => {
+      if (next === term) return;
+      if (progressDirty && !window.confirm('教学进度有未提交的修改，切换学期后将丢失，确定继续？')) return;
+      setProgressDirty(false);
+      setTerm(next);
+    },
+    [progressDirty, term],
+  );
+
+  const handlePageChange = useCallback(
+    (next: PageKey) => {
+      if (next === page) return;
+      if (progressDirty && !window.confirm('教学进度有未提交的修改，切换页面后将丢失，确定继续？')) return;
+      setProgressDirty(false);
+      setPage(next);
+    },
+    [progressDirty, page],
+  );
 
   if (booting) {
     return (
@@ -154,9 +182,9 @@ export default function App() {
         username={session.username}
         terms={terms}
         term={term}
-        onTermChange={setTerm}
+        onTermChange={handleTermChange}
         page={page}
-        onPageChange={setPage}
+        onPageChange={handlePageChange}
         onLogout={handleLogout}
         loggingOut={loggingOut}
       />
@@ -172,12 +200,20 @@ export default function App() {
         {termsError && (
           <section className="section">
             <div className="panel-card">
-              <ErrorState title="学期列表加载失败" message={termsError} onRetry={() => setTerm((value) => value)} />
+              <ErrorState title="学期列表加载失败" message={termsError} onRetry={() => setTermsAttempt((value) => value + 1)} />
             </div>
           </section>
         )}
 
-        {!termsError && !term && (
+        {!termsError && !term && termsLoading && (
+          <section className="section">
+            <div className="panel-card">
+              <LoadingState message="正在加载学期列表…" />
+            </div>
+          </section>
+        )}
+
+        {!termsError && !term && !termsLoading && (
           <section className="section">
             <div className="panel-card">
               <EmptyState title="没有可用的学期" message="教务系统未返回学期列表，无法加载课表。" hint="请稍后重试，或重新登录。" />
@@ -185,16 +221,16 @@ export default function App() {
           </section>
         )}
 
-        {!termsError && term && page === 'schedule' && <WeekSchedule key="schedule" term={term} onUnauthorized={handleUnauthorized} />}
+        {!termsError && term && page === 'schedule' && <WeekSchedule key={`schedule:${session.username}`} userId={session.username} term={term} onUnauthorized={handleUnauthorized} />}
         {!termsError && term && page !== 'schedule' && (
-          <ModulePage key={page} module={page as ModuleKey} term={term} onUnauthorized={handleUnauthorized} />
+          <ModulePage key={`${page}:${term}`} module={page as ModuleKey} term={term} onUnauthorized={handleUnauthorized} onDirtyChange={setProgressDirty} />
         )}
       </main>
 
       <footer className="footer">
         <div>
           <p>
-            数据来源：高校教务系统 · 通过本地代理 <b>/api</b> 读取，不缓存也不上传到第三方。
+            数据来源：高校教务系统 · 通过本地代理 <b>/api</b> 读取；服务端短暂缓存查询结果，便利贴保存在当前浏览器。
           </p>
           <p>扫码仅支持「喜鹊儿」App；如遇登录过期，页面会自动回到扫码登录页。</p>
           <p className="footer-github">

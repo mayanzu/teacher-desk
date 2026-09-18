@@ -13,16 +13,102 @@ server/   Node HTTP API：扫码登录、会话保持、页面解析
 - 会话：Cookie 仅存内存，可缓存到 `.session.json`（已 gitignore），失效自动提示重扫。
 - 加密：不涉及前端账号密码加密逻辑。
 
-## 快速开始
+## 在本机（电脑）上部署运行
+
+### 0. 环境要求
+
+| 依赖 | 版本 | 说明 |
+| --- | --- | --- |
+| Node.js | ≥ 20（推荐 22 LTS） | 运行后端、构建前端 |
+| npm | ≥ 10 | 随 Node 一起安装 |
+| Docker（可选） | 较新版本 | 仅在使用容器方式运行/部署时需要 |
+
+> 运行后需要浏览器 + 手机上的**喜鹊儿 App**（扫码登录）。项目不保存账号密码，也不依赖数据库。
+
+### 1. 获取代码
 
 ```bash
-npm install
-npm --prefix web install
-npm run server          # 终端 1：API 服务 http://127.0.0.1:8790
-npm run dev:web         # 终端 2：前端 http://127.0.0.1:5273（/api 自动代理到 8790）
+git clone https://github.com/mayanzu/teacher-desk.git
+cd teacher-desk
 ```
 
-首次打开前端会显示二维码，用**喜鹊儿 App** 扫码（微信/相机无效）。
+### 2. 安装依赖
+
+```bash
+npm install                # 根目录：后端依赖（iconv-lite、qrcode）
+npm --prefix web install   # web 目录：前端依赖（React、Vite、TypeScript）
+```
+
+### 3. 配置 `.env`
+
+复制模板并按需修改：
+
+```bash
+cp .env.example .env       # Windows PowerShell: copy .env.example .env
+```
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `JWXT_BASE` | `https://jwxt.slu.edu.cn:4060` | 教务系统地址（换学校改这里） |
+| `JWXT_INSECURE_TLS` | `0` | 证书不受信任导致请求失败时设 `1`（关闭 TLS 校验，仅本机调试） |
+| `PORT` | `8790` | 后端监听端口 |
+| `HOST` | `127.0.0.1` | 后端绑定地址；局域网访问设 `0.0.0.0` |
+| `JWXT_POLL_MS` | `2000` | 扫码轮询间隔（毫秒） |
+| `JWXT_QR_TIMEOUT_MS` | `300000` | 二维码有效期（毫秒） |
+| `SESSION_FILE` | `<项目>/.session.json` | 会话缓存路径（容器内用 `/data/.session.json`） |
+
+### 4. 运行
+
+**方式 A：开发模式**（改代码即时生效，推荐本地开发）—— 需要两个终端：
+
+```bash
+# 终端 1：后端 API
+npm run server        # http://127.0.0.1:8790
+
+# 终端 2：前端 Vite 开发服务器
+npm run dev:web       # http://127.0.0.1:5273（/api 自动代理到 8790）
+```
+
+浏览器打开 <http://127.0.0.1:5273>。
+
+**方式 B：生产模式**（单进程，前端构建后由后端一起托管）：
+
+```bash
+npm run build         # 构建前端到 web/dist
+npm run server        # 后端同时提供 API 与静态页面
+```
+
+浏览器打开 <http://127.0.0.1:8790>。
+
+### 5. 扫码登录
+
+首次打开会显示二维码 → 用**喜鹊儿 App** 扫码（微信/相机无效）。登录态缓存在 `.session.json`，失效后页面会自动回到扫码页。
+
+### 6. （可选）用 Docker 在本机运行
+
+```bash
+docker build -t teacher-desk:latest .
+docker run -d --name teacher-desk \
+  -p 8088:8790 \
+  -v teacher-desk-session:/data \
+  --restart unless-stopped \
+  teacher-desk:latest
+```
+
+浏览器打开 <http://127.0.0.1:8088>。跨架构（如 arm64）见下方「部署（软路由 Docker）」。
+
+### 7. 长期后台运行（可选）
+
+- **Windows**：用「任务计划程序」在开机时运行 `node server/index.mjs`（工作目录设为项目根）。
+- **Linux / macOS**：用 `pm2` 或 `systemd` 托管，例如 `pm2 start server/index.mjs --name teacher-desk`。
+
+### 8. 常见问题
+
+- **页面连不上 / `ECONNREFUSED`**：确认 `npm run server` 已启动；开发模式确认 Vite 代理端口（默认 5273）。
+- **取数失败并提示证书错误**：在 `.env` 里设 `JWXT_INSECURE_TLS=1`。
+- **端口被占用**：改 `.env` 的 `PORT`；前端开发端口见 `web/vite.config.ts`。
+- **局域网其他设备访问**：设 `HOST=0.0.0.0`，用本机内网 IP 访问，并在防火墙放行该端口。
+- **换学校**：改 `JWXT_BASE`；不同学校页面结构可能不同，解析逻辑在 `server/jwxt/`。
 
 ## API
 
@@ -72,15 +158,6 @@ web/
 ├── src/styles/      样式
 └── src/api.ts       前端 API 客户端
 Dockerfile / docker-compose.yml   软路由部署
-```
-
-## 配置（.env）
-
-```dotenv
-JWXT_BASE=https://jwxt.slu.edu.cn:4060
-JWXT_INSECURE_TLS=0     # 证书不受信任时设 1（仅本地调试）
-PORT=8790
-JWXT_POLL_MS=2000
 ```
 
 ## 部署（软路由 Docker，linux/arm64）

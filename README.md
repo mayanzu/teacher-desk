@@ -10,7 +10,8 @@ server/   Node HTTP API：扫码登录、会话保持、页面解析
 ```
 
 - 登录：`GET /cas/login.action` → 本地生成二维码 → 轮询 `frame/LoginBar.jsp` → `POST cas/logon.action`（`loginmethod=xiqueer`），全程不使用账号密码。
-- 会话：Cookie 仅存内存，可缓存到 `.session.json`（已 gitignore），失效自动提示重扫。
+- 会话：Cookie 仅存内存，按浏览器（`td_sid` Cookie）隔离，持久化到 `.sessions/<sid>.json`（已 gitignore），失效自动提示重扫。
+- 多用户：同一实例支持多个老师同时使用，各自独立登录、互不可见（详见下方「多用户」）。
 - 加密：不涉及前端账号密码加密逻辑。
 
 ## 在本机（电脑）上部署运行
@@ -55,7 +56,7 @@ cp .env.example .env       # Windows PowerShell: copy .env.example .env
 | `HOST` | `127.0.0.1` | 后端绑定地址；局域网访问设 `0.0.0.0` |
 | `JWXT_POLL_MS` | `2000` | 扫码轮询间隔（毫秒） |
 | `JWXT_QR_TIMEOUT_MS` | `300000` | 二维码有效期（毫秒） |
-| `SESSION_FILE` | `<项目>/.session.json` | 会话缓存路径（容器内用 `/data/.session.json`） |
+| `SESSION_DIR` | `<项目>/.sessions/` | 各浏览器会话的持久化目录（容器内用 `/data/sessions`） |
 
 ### 4. 运行
 
@@ -82,7 +83,7 @@ npm run server        # 后端同时提供 API 与静态页面
 
 ### 5. 扫码登录
 
-首次打开会显示二维码 → 用**喜鹊儿 App** 扫码（微信/相机无效）。登录态缓存在 `.session.json`，失效后页面会自动回到扫码页。
+首次打开会显示二维码 → 用**喜鹊儿 App** 扫码（微信/相机无效）。登录态按浏览器隔离并缓存在 `.sessions/`，失效后页面会自动回到扫码页。
 
 ### 6. （可选）用 Docker 在本机运行
 
@@ -171,9 +172,16 @@ ssh root@<router> "docker compose up -d"               # 使用仓库内 docker-
 ```
 
 - 容器内为**单进程 Node**（API + 静态资源），监听 `8790`，宿主机映射 `8088`。
-- 会话持久化在卷 `timetable-session`（挂载到容器 `/data`，`SESSION_FILE=/data/.session.json`），重建容器无需重新扫码。
-- 可用环境变量：`JWXT_BASE`、`JWXT_INSECURE_TLS`、`PORT`、`SESSION_FILE`、`HOST`。
+- 会话按浏览器隔离并持久化在卷 `timetable-session`（挂载到容器 `/data`，`SESSION_DIR=/data/sessions`），重建容器无需重新扫码。
+- 可用环境变量：`JWXT_BASE`、`JWXT_INSECURE_TLS`、`PORT`、`SESSION_DIR`、`HOST`。
 - 镜像基于 `node:22-alpine`，仅安装生产依赖；前端在构建阶段产出，运行镜像不含源码与开发依赖。
+
+## 多用户（同一实例多老师共用）
+
+- 部署一个实例（云服务器 / 软路由），多个老师从各自浏览器访问同一地址即可。
+- 每个浏览器首次访问分配一个 `td_sid` Cookie，服务端据此维护**独立的教务会话、登录流程与缓存**；各自用喜鹊儿扫码，**互不可见**，也不会互相顶号。
+- 会话文件在 `SESSION_DIR` 下按 sid 保存；退出登录或超过 7 天未活动会自动清理。
+- 数据面：业务数据（课表/成绩等）不落库，实时来自教务系统；服务器上只保存各自的登录 Cookie（临时凭证），请确保部署环境可信、访问受限。
 
 ## 状态与后续
 

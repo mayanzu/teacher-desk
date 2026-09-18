@@ -1,9 +1,8 @@
 import { createServer } from 'node:http';
-import { existsSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { config } from './config.mjs';
-import { JwxtSession } from './session.mjs';
-import { createLoginFlow } from './login.mjs';
+import { contextFor, persistSession, dropContext, sweepSessions } from './sessionStore.mjs';
 import { getSchedule, getTasks, getTerms, getProgress, getGrades, getProgressClasses, getProgressEntry, buildProgressPayload, saveProgressEntry, getProgressCopyTerms, getProgressCopyClasses, copyProgressFromClass, getProgressSummary, buildProgressCsv, getRoster, buildRosterCsv, buildRosterReportHtml, buildRosterListHtml, getRosterPrintHtml, getCourseGradeClasses, getCourseGradesReport, exportCourseGradesPdf, exportCourseGradesExcel, exportProgressPdf } from './jwxt/index.mjs';
 
 function courseGradeParams(url, term) {
@@ -22,38 +21,17 @@ function courseGradeParams(url, term) {
   };
 }
 
-let session = loadSession();
-const loginFlow = createLoginFlow();
-
-function loadSession() {
-  if (!existsSync(config.sessionFile)) return null;
-  try {
-    return JwxtSession.deserialize(readFileSync(config.sessionFile, 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
-function saveSession() {
-  if (!session) return;
-  try {
-    writeFileSync(config.sessionFile, session.serialize(), 'utf8');
-  } catch {
-    /* best effort */
-  }
-}
-
-async function sessionAlive() {
-  if (!session) return false;
+async function sessionAlive(ctx) {
+  if (!ctx.session) return false;
   try {
     // SetMainInfo.jsp 会输出当前登录账号；未登录时为 kingo.guest
-    const info = await session.text('/ahsljw/frame/home/js/SetMainInfo.jsp', { method: 'GET' });
+    const info = await ctx.session.text('/ahsljw/frame/home/js/SetMainInfo.jsp', { method: 'GET' });
     if (info.status === 200) {
       if (/kingo\.guest/i.test(info.text)) return false;
       if (/_loginid\s*=\s*'[^']+'/.test(info.text)) return true;
     }
-    if (!session.landingUrl) return false;
-    const res = await session.text(session.landingUrl, { method: 'GET' });
+    if (!ctx.session.landingUrl) return false;
+    const res = await ctx.session.text(ctx.session.landingUrl, { method: 'GET' });
     if (res.status !== 200) return false;
     if (/cas\/login\.action|未登录|登录超时|重新登录|会话已过期/i.test(res.text)) return false;
     return true;
@@ -62,14 +40,13 @@ async function sessionAlive() {
   }
 }
 
-const cache = new Map();
 const CACHE_TTL = 5 * 60 * 1000;
 
-async function cached(key, fn) {
-  const hit = cache.get(key);
+async function cached(ctx, key, fn) {
+  const hit = ctx.cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL) return hit.value;
   const value = await fn();
-  cache.set(key, { at: Date.now(), value });
+  ctx.cache.set(key, { at: Date.now(), value });
   return value;
 }
 
@@ -97,7 +74,7 @@ const MIME = {
   '.woff2': 'font/woff2',
 };
 
-const WEB_DIST = join(config.root, 'web', 'dist');
+const WEB_DIST = process.env.WEB_DIST || join(config.root, 'web', 'dist');
 
 function serveStatic(res, pathname) {
   if (!existsSync(WEB_DIST)) return false;
@@ -142,14 +119,13 @@ function readJson(req) {
   });
 }
 
-async function ensureSession() {
-  if (!session) throw Object.assign(new Error('未登录，请先扫码'), { status: 401 });
-  if (!(await sessionAlive())) {
-    session = null;
-    rmSync(config.sessionFile, { force: true });
+async function ensureSession(ctx) {
+  if (!ctx.session) throw Object.assign(new Error('未登录，请先扫码'), { status: 401 });
+  if (!(await sessionAlive(ctx))) {
+    dropContext(ctx);
     throw Object.assign(new Error('登录已过期，请重新扫码'), { status: 401 });
   }
-  return session;
+  return ctx.session;
 }
 
 const server = createServer(async (req, res) => {
@@ -159,63 +135,64 @@ const server = createServer(async (req, res) => {
     res.writeHead(204);
     return res.end();
   }
+  let ctx = null;
   try {
     if (url.pathname === '/api/health') return json(res, 200, { ok: true });
 
+    // 每个浏览器一个独立会话上下文（Cookie: td_sid）
+    if (url.pathname.startsWith('/api/')) ctx = contextFor(req, res);
+
     if (url.pathname === '/api/session' && req.method === 'GET') {
-      const alive = await sessionAlive();
-      return json(res, 200, { loggedIn: alive, username: alive ? session.username : '' });
+      const alive = await sessionAlive(ctx);
+      return json(res, 200, { loggedIn: alive, username: alive && ctx.session ? ctx.session.username : '' });
     }
 
     if (url.pathname === '/api/login/start' && req.method === 'POST') {
-      return json(res, 200, await loginFlow.start());
+      return json(res, 200, await ctx.loginFlow.start());
     }
 
     if (url.pathname === '/api/login/status' && req.method === 'GET') {
-      const { status, message, username } = loginFlow.state;
+      const { status, message, username } = ctx.loginFlow.state;
       if (status === 'success') {
-        const flowSession = loginFlow.getSession();
-        if (session !== flowSession) {
-          session = flowSession;
-          saveSession();
-          cache.clear();
+        const flowSession = ctx.loginFlow.getSession();
+        if (ctx.session !== flowSession) {
+          ctx.session = flowSession;
+          persistSession(ctx);
+          ctx.cache.clear();
         }
       }
       return json(res, 200, { status, message, username });
     }
 
     if (url.pathname === '/api/logout' && req.method === 'POST') {
-      loginFlow.reset();
-      session = null;
-      rmSync(config.sessionFile, { force: true });
-      cache.clear();
+      dropContext(ctx);
       return json(res, 200, { ok: true });
     }
 
     if (url.pathname === '/api/terms' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const terms = await cached('terms', () => getTerms(s));
       return json(res, 200, { terms, current: terms[0]?.value || '' });
     }
 
     if (url.pathname === '/api/schedule' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cached(`schedule:${term}`, () => getSchedule(s, term));
+      const data = await cached(ctx, `schedule:${term}`, () => getSchedule(s, term));
       return json(res, 200, data);
     }
 
     if (url.pathname === '/api/tasks' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cached(`tasks:${term}`, () => getTasks(s, term));
+      const data = await cached(ctx, `tasks:${term}`, () => getTasks(s, term));
       return json(res, 200, data);
     }
 
     if (url.pathname === '/api/progress/copy-terms' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       const kcdm = url.searchParams.get('kcdm') || '';
       const skbjdm = url.searchParams.get('skbjdm') || '';
@@ -225,7 +202,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/progress/copy-classes' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       const kcdm = url.searchParams.get('kcdm') || '';
       const skbjdm = url.searchParams.get('skbjdm') || '';
@@ -236,7 +213,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/progress/copy' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const kcdm = url.searchParams.get('kcdm') || '';
       const source = url.searchParams.get('source') || '';
       const xnxq = url.searchParams.get('xnxq') || '';
@@ -246,15 +223,15 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/progress/classes' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cached(`progressClasses:${term}`, () => getProgressClasses(s, term));
+      const data = await cached(ctx, `progressClasses:${term}`, () => getProgressClasses(s, term));
       return json(res, 200, data);
     }
 
     if (url.pathname === '/api/progress/entry' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
       const params = {
@@ -277,7 +254,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/progress/entry' && req.method === 'POST') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const body = await readJson(req);
       if (!body || !body.term || !body.meta || !Array.isArray(body.rows)) {
         return json(res, 400, { error: '请求体需要 term / meta / rows' });
@@ -290,12 +267,12 @@ const server = createServer(async (req, res) => {
         });
       }
       const result = await saveProgressEntry(s, body.term, body.meta, body.rows, body.formFields || {}, body.tjflag || '1', body.xqskzs || '');
-      cache.clear();
+      ctx.cache.clear();
       return json(res, 200, result);
     }
 
     if (url.pathname === '/api/progress/export/pdf' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
       const { filename, buffer } = await exportProgressPdf(s, {
@@ -318,15 +295,15 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/progress/summary' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cached(`progressSummary:${term}`, () => getProgressSummary(s, term));
+      const data = await cached(ctx, `progressSummary:${term}`, () => getProgressSummary(s, term));
       return json(res, 200, data);
     }
 
     if (url.pathname === '/api/progress/export' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       const className = url.searchParams.get('class') || '';
       const kcdm = url.searchParams.get('kcdm') || '';
@@ -353,7 +330,7 @@ const server = createServer(async (req, res) => {
           content: row.content,
         }));
       } else {
-        const data = await cached(`progress:${term}`, () => getProgress(s, term));
+        const data = await cached(ctx, `progress:${term}`, () => getProgress(s, term));
         rows = data.items.filter(
           (row) =>
             (skbjdm ? row.classCode === skbjdm : true) && (className ? row.classNames === className : true),
@@ -372,10 +349,10 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/roster/classes' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cached(`progressClasses:${term}`, () => getProgressClasses(s, term));
+      const data = await cached(ctx, `progressClasses:${term}`, () => getProgressClasses(s, term));
       return json(res, 200, {
         items: (data.items ?? []).map((item) => ({
           kcdm: item.params.kcdm,
@@ -387,7 +364,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/roster' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       const kcdm = url.searchParams.get('kcdm') || '';
       const skbjdm = url.searchParams.get('skbjdm') || '';
@@ -397,7 +374,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/roster/export' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       const kcdm = url.searchParams.get('kcdm') || '';
       const skbjdm = url.searchParams.get('skbjdm') || '';
@@ -416,7 +393,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/roster/report' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       const kcdm = url.searchParams.get('kcdm') || '';
       const skbjdm = url.searchParams.get('skbjdm') || '';
@@ -443,7 +420,7 @@ const server = createServer(async (req, res) => {
       let teacherCode = '';
       let teacherName = '';
       try {
-        const list = await cached(`progressClasses:${term}`, () => getProgressClasses(s, term));
+        const list = await cached(ctx, `progressClasses:${term}`, () => getProgressClasses(s, term));
         const match = (list.items ?? []).find((item) => item.params?.kcdm === kcdm && item.classCode === skbjdm);
         if (match) {
           courseName = match.courseRaw || '';
@@ -458,7 +435,7 @@ const server = createServer(async (req, res) => {
       }
       const courseCode = courseName.match(/^\[([^\]]+)\]/)?.[1] || '';
       try {
-        const tasks = await cached(`tasks:${term}`, () => getTasks(s, term));
+        const tasks = await cached(ctx, `tasks:${term}`, () => getTasks(s, term));
         const list = tasks.items ?? [];
         const task =
           list.find((item) => courseCode && item.courseCode === courseCode && (!className || item.classNames === className)) ||
@@ -515,31 +492,31 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/progress' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cached(`progress:${term}`, () => getProgress(s, term));
+      const data = await cached(ctx, `progress:${term}`, () => getProgress(s, term));
       return json(res, 200, data);
     }
 
     if (url.pathname === '/api/grades' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cached(`grades:${term}`, () => getGrades(s, term));
+      const data = await cached(ctx, `grades:${term}`, () => getGrades(s, term));
       return json(res, 200, data);
     }
 
     if (url.pathname === '/api/course-grades/classes' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cached(`courseGradeClasses:${term}`, () => getCourseGradeClasses(s, term));
+      const data = await cached(ctx, `courseGradeClasses:${term}`, () => getCourseGradeClasses(s, term));
       return json(res, 200, data);
     }
 
     if (url.pathname === '/api/course-grades' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
       const params = courseGradeParams(url, term);
@@ -549,7 +526,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/course-grades/export/pdf' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
       const params = courseGradeParams(url, term);
@@ -566,7 +543,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/course-grades/export/excel' && req.method === 'GET') {
-      const s = await ensureSession();
+      const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
       const params = courseGradeParams(url, term);
@@ -588,11 +565,13 @@ const server = createServer(async (req, res) => {
   } catch (error) {
     const status = error?.status || 500;
     if (status >= 500) console.error('[api]', error);
-    if (error?.status === 401) session = null;
+    if (error?.status === 401 && ctx) dropContext(ctx);
     json(res, status, { error: error instanceof Error ? error.message : 'internal error' });
   }
 });
 
 server.listen(config.port, process.env.HOST || '127.0.0.1', () => {
   console.log(`[api] http://${process.env.HOST || '127.0.0.1'}:${config.port}`);
+  sweepSessions();
+  setInterval(sweepSessions, 60 * 60 * 1000).unref();
 });

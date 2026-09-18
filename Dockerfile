@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+﻿# syntax=docker/dockerfile:1
 
 # ---- 构建前端（Vite + TS）----
 FROM node:22-alpine AS web
@@ -14,7 +14,7 @@ RUN apk add --no-cache ca-certificates
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8790 \
-    SESSION_FILE=/data/.session.json
+    SESSION_DIR=/data/sessions
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force

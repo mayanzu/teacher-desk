@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const root = fileURLToPath(new URL('../', import.meta.url));
+const root = process.env.APP_ROOT || fileURLToPath(new URL('../', import.meta.url));
 
 function loadEnvFile(path) {
   if (!existsSync(path)) return;
@@ -29,7 +29,7 @@ export const config = {
   port: num(process.env.PORT, 8790),
   qrTimeoutMs: num(process.env.JWXT_QR_TIMEOUT_MS, 5 * 60 * 1000),
   pollMs: num(process.env.JWXT_POLL_MS, 2000),
-  sessionFile: process.env.SESSION_FILE || `${root}.session.json`,
+  sessionDir: process.env.SESSION_DIR || `${root}.sessions/`,
   root,
 };
 

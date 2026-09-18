@@ -7,7 +7,7 @@ import { getTasks } from '../server/jwxt/tasks.mjs';
 import { getSchedule } from '../server/jwxt/schedule.mjs';
 import { getProgressClasses, getProgressSummary, buildProgressCsv } from '../server/jwxt/progress.mjs';
 import { getCourseGradesReport } from '../server/jwxt/course-grades.mjs';
-import { buildRosterCsv } from '../server/jwxt/roster.mjs';
+import { getRoster, buildRosterCsv } from '../server/jwxt/roster.mjs';
 import { csvCell, csvTextNumber } from '../server/jwxt/common.mjs';
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
@@ -45,6 +45,23 @@ test('progress class list fixture yields params for submission', async () => {
   assert.equal(items[0].className, '2024计算机1班');
 });
 
+test('course grade report keeps both header rows and skips shifted header row', async () => {
+  const report = await getCourseGradesReport(htmlSession(fixture('course-grades-report.html')), {
+    term: '2026,0',
+    kcdm: 'CS101',
+    bjdm: '2024CS1',
+    bjmc: '2024级示例班',
+    flag: '1',
+    dyfs: 'dl',
+  });
+  // 学号列 rowspan=2 时，第二行表头（类别/成绩）会落在学号列，不能被当作数据行
+  assert.equal(report.header.length, 2);
+  assert.equal(report.rows.length, 2);
+  assert.equal(report.rows[0][1], 'S0001');
+  assert.equal(report.rows[0][2], '张三');
+  assert.equal(report.empty, false);
+});
+
 test('course grade report fixture keeps header and student rows', async () => {
   const report = await getCourseGradesReport(htmlSession(fixture('course-grades.html')), {
     term: '2026,0',
@@ -58,6 +75,14 @@ test('course grade report fixture keeps header and student rows', async () => {
   assert.equal(report.rows.length, 2);
   assert.equal(report.rows[0][0], '2024001');
   assert.equal(report.empty, false);
+});
+
+test('roster report skips the week-number subheader row', async () => {
+  const roster = await getRoster(htmlSession(fixture('roster-report.html')), '2026,0', 'CS101', 'CS101-001');
+  assert.equal(roster.items.length, 2);
+  assert.equal(roster.items[0].studentId, '20240001');
+  assert.equal(roster.items[0].name, '张三');
+  assert.equal(roster.items[0].remark, '备注A');
 });
 
 test('progress summary reports per-class failure without dropping the rest', async () => {

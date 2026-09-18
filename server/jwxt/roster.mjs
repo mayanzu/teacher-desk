@@ -30,6 +30,8 @@ export async function getRoster(session, term, kcdm, skbjdm) {
   }
   const items = [];
   for (const row of rows.slice(headerIndex + 1)) {
+    // 表头第二行是「日期周次」的周次数字（1..N），需整行跳过，避免被当成学生行
+    if (row.length >= 8 && row.slice(0, 8).every((cell) => /^\d{1,2}$/.test(String(cell ?? '').trim()))) continue;
     const studentId = String(row[2] ?? '').trim();
     const name = String(row[3] ?? '').trim();
     if (!name && !studentId) continue;
@@ -42,7 +44,8 @@ export async function getRoster(session, term, kcdm, skbjdm) {
       college: row[5] ?? '',
       major: row[6] ?? '',
       type: row[7] ?? '',
-      remark: String(row[9] ?? row[8] ?? '').trim(),
+      // 备注是最后一列；数据行会因「日期周次」的展开而列数不定，不能用固定下标
+      remark: String(row[row.length - 1] ?? '').trim(),
     });
   }
   return { items };

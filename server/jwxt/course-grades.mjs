@@ -1,7 +1,8 @@
 import { clean, parseTerm, requireDownload, doubleEncode, safeFileName, requirePage } from './common.mjs';
 
 const COURSE_GRADE_LIST_TABLE = '5013';
-const COURSE_GRADE_LIST_PAGE = 'cjlr.ckxscj.fkcaxzbjckcj.html?menucode=T30304';
+// 学号：连续的数字/字母串；用于把表头行与数据行区分开
+const STUDENT_ID_RE = /^[0-9A-Za-z]{4,}$/;const COURSE_GRADE_LIST_PAGE = 'cjlr.ckxscj.fkcaxzbjckcj.html?menucode=T30304';
 const COURSE_GRADE_REPORT_PAGE = 'cjlr.ckxscj.fkcaxzbjckcj_rpt.jsp';
 
 const COURSE_GRADE_FILES = {
@@ -119,19 +120,21 @@ export async function getCourseGradesReport(session, params) {
     const headerIndex = tableGrid.findIndex((row) => row.some((cell) => cell.text === '学号'));
     if (headerIndex < 0) continue;
     const idColumn = tableGrid[headerIndex].findIndex((cell) => cell.text === '学号');
-    // 数据起始行：表头之后第一个“学号列非空”的行（兼容 rowspan 合并单元格与字母学号）
-    const dataStart = tableGrid.findIndex(
-      (row, index) =>
-        index > headerIndex &&
-        row.some((cell) => cell.text !== '') &&
-        String(row[idColumn]?.text ?? '').trim() !== '' &&
-        String(row[idColumn]?.text ?? '').trim() !== '学号',
-    );
+    // 数据起始行：学号列“像学号”或为空（学号列 rowspan 合并时，后续数据行学号为空）。
+    // 这样既能排除第二行表头（如「类别/成绩」落在学号列），又能保留合并单元格的数据行。
+    const idOf = (row) => String(row[idColumn]?.text ?? '').replace(/\s+/g, '');
+    const dataStart = tableGrid.findIndex((row, index) => {
+      if (index <= headerIndex) return false;
+      const id = idOf(row);
+      return id === '' || STUDENT_ID_RE.test(id);
+    });
     const end = dataStart < 0 ? tableGrid.length : dataStart;
     header = tableGrid.slice(headerIndex, end);
     for (let index = end; index < tableGrid.length; index += 1) {
       const row = tableGrid[index];
       if (!row.some((cell) => cell.text !== '')) continue;
+      const id = idOf(row);
+      if (id !== '' && !STUDENT_ID_RE.test(id)) continue;
       rows.push(row.map((cell) => cell.text));
     }
     break;

@@ -297,6 +297,22 @@
   line-height: 1.8;
 }
 .footer b { padding: 1px 5px; color: var(--ink); background: var(--yellow); border-radius: 3px; }
+.footer-github { margin-top: 12px; }
+.footer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  color: var(--ink);
+  background: var(--paper-2);
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  box-shadow: 3px 3px 0 var(--ink);
+  font-weight: 900;
+  text-decoration: none;
+}
+.footer-link:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+.footer-link svg { width: 18px; height: 18px; fill: currentColor; stroke: none; }
 
 /* ---------- 响应式 ---------- */
 @media (max-width: 1040px) {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, errorMessage, isUnauthorized } from './api';
 import { AppHeader } from './components/AppHeader';
+import { GitHubIcon } from './components/Icons';
 import { LoginPage } from './components/LoginPage';
 import { ModulePage } from './components/ModulePage';
 import { EmptyState, ErrorState, LoadingState } from './components/StateViews';
@@ -196,6 +197,17 @@ export default function App() {
             数据来源：高校教务系统 · 通过本地代理 <b>/api</b> 读取，不缓存也不上传到第三方。
           </p>
           <p>扫码仅支持「喜鹊儿」App；如遇登录过期，页面会自动回到扫码登录页。</p>
+          <p className="footer-github">
+            <a
+              className="footer-link"
+              href="https://github.com/mayanzu/teacher-desk"
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              <GitHubIcon aria-hidden="true" />
+              <span>mayanzu/teacher-desk</span>
+            </a>
+          </p>
         </div>
       </footer>
     </div>

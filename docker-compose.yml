@@ -1,0 +1,16 @@
+services:
+  timetable:
+    image: teacher-desk:latest
+    container_name: timetable
+    restart: unless-stopped
+    ports:
+      - "8088:8790"
+    environment:
+      JWXT_BASE: https://jwxt.slu.edu.cn:4060
+      JWXT_INSECURE_TLS: "0"
+    volumes:
+      - timetable-session:/data
+
+volumes:
+  timetable-session:
+    name: timetable-session

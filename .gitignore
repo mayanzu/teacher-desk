@@ -1,11 +1,7 @@
 node_modules
-dist
-coverage
 .env
 .env.*
 !.env.example
+out/
+.session.json
 *.log
-.DS_Store
-Thumbs.db
-preview-*.png
-.workbuddy/

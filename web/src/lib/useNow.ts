@@ -1,0 +1,13 @@
+import { useEffect, useState } from 'react';
+
+/** 返回一个按固定间隔刷新的“当前时间”，用于倒计时与 live/past 状态。 */
+export function useNow(intervalMs = 1000): Date {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), intervalMs);
+    return () => window.clearInterval(id);
+  }, [intervalMs]);
+
+  return now;
+}

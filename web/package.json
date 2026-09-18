@@ -1,0 +1,28 @@
+{
+  "name": "jwxt-teacher-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "教务系统现代化前端 · 教师工作台（美漫/漫画风）",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

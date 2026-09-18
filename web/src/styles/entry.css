@@ -1,0 +1,333 @@
+/* ==========================================================================
+   教师工作台 · 教学进度 / 任务点名册 页面级样式
+   设计尺度与主题令牌全部复用 comic.css：
+   描边 2/3/4px · 圆角 10/12/14/16px · 阴影 3/4px 偏移实心 · 明黄选中态。
+   ========================================================================== */
+
+/* ---------- 二级页骨架：与整站 .section 共用 1460px 栅格 ---------- */
+.subpage {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 1460px;
+  margin: auto;
+  padding: 38px 28px 0;
+}
+
+.subpage > .section {
+  max-width: none;
+  margin: 0;
+  padding: 14px 0 20px;
+}
+
+/* ---------- 二级标签：与主导航 / 课表周选择器同一套控件语言 ---------- */
+.subtabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 4px;
+  width: max-content;
+  max-width: 100%;
+  padding: 4px;
+  background: var(--paper-2);
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.subtab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 8px 18px;
+  color: var(--secondary);
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  font: 900 14px var(--font);
+  white-space: nowrap;
+  transition: background .16s ease, color .16s ease, box-shadow .16s ease;
+}
+
+.subtab:hover { color: var(--ink); background: var(--paper-3); }
+
+.subtab.is-active {
+  color: var(--ink);
+  background: var(--yellow);
+  border-color: var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+/* ---------- 教学班选择卡（录入页） ---------- */
+.entry-classes {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  margin-bottom: 16px;
+}
+
+.entry-class {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  text-align: left;
+  color: inherit;
+  background: var(--paper-2);
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+.entry-class:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+.entry-class.is-active { background: var(--yellow-soft); }
+
+.entry-class strong { font-size: 14px; font-weight: 900; line-height: 1.35; }
+.entry-class span { font-size: 12px; font-weight: 700; color: var(--secondary); }
+
+/* ---------- 录入表单控件 ---------- */
+.entry-input {
+  width: 100%;
+  min-width: 160px;
+  padding: 8px 10px;
+  color: inherit;
+  background: var(--paper-2);
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  font: 700 13px var(--font);
+  resize: vertical;
+}
+
+.entry-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.entry-toolbar-label { font-size: 13px; font-weight: 900; color: var(--secondary); }
+
+.entry-copy-panel {
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  background: var(--paper-3);
+  border: 2px dashed var(--ink);
+  border-radius: 14px;
+}
+
+.entry-copy-term {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.entry-copy-term select {
+  min-height: 38px;
+  padding: 0 10px;
+  color: inherit;
+  background: var(--paper-2);
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  box-shadow: 2px 2px 0 var(--yellow);
+  font: 800 13px var(--font);
+  cursor: pointer;
+}
+
+.entry-copy-term select:disabled { opacity: .6; cursor: not-allowed; }
+
+.entry-copy-list {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  margin-top: 10px;
+}
+
+.entry-copy-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  text-align: left;
+  background: var(--yellow-soft);
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  box-shadow: 3px 3px 0 var(--ink);
+  cursor: pointer;
+  transition: transform .16s ease, box-shadow .16s ease;
+}
+
+.entry-copy-item:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+.entry-copy-item strong { font-size: 13px; font-weight: 900; }
+.entry-copy-item span { font-size: 12px; font-weight: 700; color: var(--secondary); }
+
+.entry-copy-empty { margin: 10px 0 0; font-size: 12.5px; font-weight: 700; color: var(--secondary); }
+
+.entry-totals {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  background: var(--yellow-soft);
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  box-shadow: 2px 2px 0 var(--ink);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.entry-hours { width: 72px; min-width: 72px; text-align: center; }
+
+.entry-notice {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: var(--blue-soft);
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+/* ---------- 录入表格：撑开滚动容器，窄屏横向滚动不破卡 ---------- */
+.entry-table { min-width: 760px; }
+.entry-table th,
+.entry-table td { vertical-align: middle; }
+
+/* ---------- 查看教学进度：班级分组卡片 ---------- */
+.pv-list { display: grid; gap: 14px; }
+
+.pv-card {
+  padding: 16px 18px;
+  background: var(--paper-2);
+  border: 3px solid var(--ink);
+  border-radius: 16px;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.pv-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pv-head h3 { margin: 0; font-size: 15px; font-weight: 1000; letter-spacing: -.02em; }
+.pv-meta { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: var(--secondary); }
+.pv-actions { display: flex; flex-wrap: wrap; gap: 8px; flex: none; }
+
+.pv-bar {
+  height: 10px;
+  margin-top: 12px;
+  overflow: hidden;
+  background: var(--paper-4);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+}
+
+.pv-bar span { display: block; height: 100%; background: var(--red); }
+
+.pv-weeks {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.pv-weeks li {
+  display: grid;
+  grid-template-columns: 62px 92px 58px 1fr;
+  gap: 8px;
+  align-items: baseline;
+  padding: 7px 10px;
+  background: var(--paper-2);
+  border: 2px solid var(--line-soft);
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.pv-week { font-weight: 900; }
+.pv-date,
+.pv-period { color: var(--secondary); }
+.pv-content { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- 教学任务 · 学生点名册 ---------- */
+.roster-block {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 2px dashed var(--ink);
+}
+
+.roster-title { margin: 0 0 12px; font-size: 15px; font-weight: 1000; letter-spacing: -.02em; }
+
+.roster-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.roster-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--paper-2);
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.roster-item > div { flex: 1 1 150px; min-width: 0; }
+.roster-item > a:first-of-type { margin-left: auto; }
+.roster-item strong { display: block; font-size: 13px; font-weight: 900; }
+.roster-item span { font-size: 12px; font-weight: 700; color: var(--secondary); }
+.roster-item .kbtn { min-height: 36px; padding: 7px 12px; font-size: 12.5px; }
+.roster-item .roster-actions {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  margin-left: auto;
+}
+.roster-item .roster-actions .kbtn { justify-content: center; }
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 860px) {
+  /* 与 .section 的 860px 档保持一致，避免二级页与整站栅格错位 */
+  .subpage { padding: 26px 14px 0; }
+}
+
+@media (max-width: 760px) {
+  .subpage { gap: 12px; }
+  .subtabs { width: 100%; }
+  .subtab { flex: 1 1 0; padding: 8px 10px; font-size: 13px; }
+  .entry-copy-panel { padding: 12px; }
+  .pv-card { padding: 14px; border-width: 3px; }
+}
+
+@media (max-width: 560px) {
+  .pv-actions { width: 100%; }
+  .pv-actions .kbtn { flex: 1 1 0; }
+}
+
+@media (max-width: 720px) {
+  .pv-weeks li { grid-template-columns: 54px 1fr; }
+  .pv-content { grid-column: 1 / -1; white-space: normal; }
+}

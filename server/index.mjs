@@ -217,6 +217,39 @@ function clearCache(ctx) {
   ctx.inflight.clear();
 }
 
+// 预热开关：JWXT_WARMUP=0 可关掉（比如上游压力大时）
+const WARMUP = process.env.JWXT_WARMUP !== '0';
+const warmed = new WeakSet();
+
+/**
+ * 登录后在后台把「切 tab 第一眼要看到」的数据拉进缓存。
+ * 顺序：先拿学期列表定出当前学期，再并发预热该学期下的课表/教学任务/成绩/点名/进度数据集。
+ * 单个数据集失败只记日志、不影响其它数据集（成绩之类本来就可能为空或没有权限）。
+ */
+async function warmUp(ctx, session) {
+  try {
+    const terms = await cached(ctx, 'terms', () => getTerms(session));
+    const term = terms?.[0]?.value;
+    if (!term) return;
+    const jobs = [
+      ['schedule', () => cached(ctx, `schedule:${term}`, () => getSchedule(session, term))],
+      ['tasks', () => cached(ctx, `tasks:${term}`, () => getTasks(session, term))],
+      ['grades', () => cached(ctx, `grades:${term}`, () => getGrades(session, term))],
+      ['courseGradeClasses', () => cached(ctx, `courseGradeClasses:${term}`, () => getCourseGradeClasses(session, term))],
+      ['progressClasses', () => cached(ctx, `progressClasses:${term}`, () => getProgressClasses(session, term))],
+    ];
+    await mapWithConcurrency(jobs, fetchConcurrency(), async ([name, job]) => {
+      try {
+        await job();
+      } catch (error) {
+        console.warn(`[warmup] ${name} 预热失败：${error?.message || error}`);
+      }
+    });
+  } catch (error) {
+    console.warn(`[warmup] 预热中止：${error?.message || error}`);
+  }
+}
+
 async function ensureSession(ctx) {
   if (!ctx.session) throw Object.assign(new Error('未登录，请先扫码'), { status: 401 });
   if (!(await sessionAlive(ctx))) {
@@ -244,6 +277,14 @@ const server = createServer(async (req, res) => {
 
     // 每个浏览器一个独立会话上下文（Cookie: td_sid）
     if (url.pathname.startsWith('/api/')) ctx = contextFor(req, res);
+
+    // 数据预热：老师一登录（或恢复登录态后第一次请求）就在后台把常用数据拉进缓存，
+    // 之后切「周课表」「教学任务」这些 tab 直接命中缓存，不再等上游。
+    // 用 WeakSet 按会话对象记，登录态轮换后自然重新预热；预热失败不影响任何功能。
+    if (ctx?.session && WARMUP && !warmed.has(ctx.session)) {
+      warmed.add(ctx.session);
+      void warmUp(ctx, ctx.session);
+    }
 
     // ?refresh=1：跳过缓存直接回源（手动刷新用；分层 TTL 下需要这个出口）
     const refreshRequested = url.searchParams.get('refresh') === '1';

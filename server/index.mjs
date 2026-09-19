@@ -158,6 +158,8 @@ function serveStatic(res, pathname) {
   const resolved = resolve(WEB_DIST, relativePath);
   const inside = relative(WEB_DIST, resolved);
   if (inside.startsWith('..') || isAbsolute(inside)) return false;
+  // normalize 会把 "//../" 折叠掉（Linux 上尤其明显），必须在归一化前按路径段拒绝 ..
+  if (decoded.split(/[/\\]+/).includes('..')) return false;
   let filePath = resolved;
   if (!existsSync(filePath) || !statSync(filePath).isFile()) {
     filePath = join(WEB_DIST, 'index.html');

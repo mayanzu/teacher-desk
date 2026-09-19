@@ -103,6 +103,31 @@ function json(res, status, payload) {
   res.end(body);
 }
 
+/*
+ * 二进制下载。
+ * 前端 fetch 带 Accept: application/json 时改发 { filename, contentType, base64 }，
+ * 由前端还原成 Blob 下载：IDM 等下载管理器看不到文件响应，不会再出现「IDM 一份 + 浏览器空文件」的双下载。
+ * 直接访问（浏览器地址栏/普通链接）仍返回附件流。
+ */
+function sendDownload(req, res, filename, buffer, contentType) {
+  if (/\bapplication\/json\b/.test(String(req.headers.accept || ''))) {
+    const body = JSON.stringify({ filename, contentType, base64: buffer.toString('base64') });
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Content-Length': Buffer.byteLength(body),
+    });
+    return res.end(body);
+  }
+  res.writeHead(200, {
+    'Content-Type': contentType,
+    'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    'Content-Length': buffer.length,
+    'Cache-Control': 'no-store',
+  });
+  res.end(buffer);
+}
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -336,17 +361,14 @@ const server = createServer(async (req, res) => {
         scope: url.searchParams.get('scope') || '',
         kcdm: url.searchParams.get('kcdm') || '',
         bjdm: url.searchParams.get('bjdm') || '',
+        skbjdm: url.searchParams.get('skbjdm') || '',
+        bjmc: url.searchParams.get('bjmc') || '',
+        teacher: url.searchParams.get('teacher') || '',
         kcmc: url.searchParams.get('kcmc') || '',
         courseName: url.searchParams.get('courseName') || '',
         className: url.searchParams.get('className') || '',
       });
-      res.writeHead(200, {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
-        'Content-Length': buffer.length,
-        'Cache-Control': 'no-store',
-      });
-      res.end(buffer);
+      sendDownload(req, res, filename, buffer, 'application/pdf');
       return;
     }
 
@@ -394,13 +416,7 @@ const server = createServer(async (req, res) => {
       }
       const csv = buildProgressCsv(rows);
       const filename = `${className || '全部班级'}-教学进度表.csv`;
-      res.writeHead(200, {
-        'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
-        'Content-Length': Buffer.byteLength(csv),
-        'Cache-Control': 'no-store',
-      });
-      res.end(csv);
+      sendDownload(req, res, filename, Buffer.from(csv, 'utf8'), 'text/csv; charset=utf-8');
       return;
     }
 
@@ -438,13 +454,7 @@ const server = createServer(async (req, res) => {
       const data = await getRoster(s, term, kcdm, skbjdm);
       const csv = buildRosterCsv(data.items ?? []);
       const filename = `点名册-${skbjdm}.csv`;
-      res.writeHead(200, {
-        'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
-        'Content-Length': Buffer.byteLength(csv),
-        'Cache-Control': 'no-store',
-      });
-      res.end(csv);
+      sendDownload(req, res, filename, Buffer.from(csv, 'utf8'), 'text/csv; charset=utf-8');
       return;
     }
 
@@ -537,13 +547,7 @@ const server = createServer(async (req, res) => {
         return;
       }
       const filename = `点名册-${className || skbjdm}.${asHtml ? 'html' : 'xls'}`;
-      res.writeHead(200, {
-        'Content-Type': asHtml ? 'text/html; charset=utf-8' : 'application/vnd.ms-excel; charset=utf-8',
-        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
-        'Content-Length': Buffer.byteLength(body),
-        'Cache-Control': 'no-store',
-      });
-      res.end(body);
+      sendDownload(req, res, filename, body, asHtml ? 'text/html; charset=utf-8' : 'application/vnd.ms-excel; charset=utf-8');
       return;
     }
 
@@ -588,13 +592,7 @@ const server = createServer(async (req, res) => {
       const params = courseGradeParams(url, term);
       if (!params.kcdm || !params.bjdm) return json(res, 400, { error: '缺少 kcdm / bjdm 参数' });
       const { filename, buffer } = await exportCourseGradesPdf(s, params);
-      res.writeHead(200, {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
-        'Content-Length': buffer.length,
-        'Cache-Control': 'no-store',
-      });
-      res.end(buffer);
+      sendDownload(req, res, filename, buffer, 'application/pdf');
       return;
     }
 
@@ -605,13 +603,7 @@ const server = createServer(async (req, res) => {
       const params = courseGradeParams(url, term);
       if (!params.kcdm || !params.bjdm) return json(res, 400, { error: '缺少 kcdm / bjdm 参数' });
       const { filename, buffer } = await exportCourseGradesExcel(s, params);
-      res.writeHead(200, {
-        'Content-Type': 'application/vnd.ms-excel',
-        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
-        'Content-Length': buffer.length,
-        'Cache-Control': 'no-store',
-      });
-      res.end(buffer);
+      sendDownload(req, res, filename, buffer, 'application/vnd.ms-excel');
       return;
     }
 

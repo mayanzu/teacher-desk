@@ -162,6 +162,10 @@ export interface ProgressSummaryRow {
 export interface ProgressSummaryGroup {
   kcdm: string;
   skbjdm: string;
+  bjdm?: string;
+  bjmc?: string;
+  kcmc?: string;
+  teacher?: string;
   className: string;
   courseName: string;
   courses?: string[];

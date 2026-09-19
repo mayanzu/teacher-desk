@@ -502,11 +502,12 @@ export async function getProgressSummary(session, term) {
       const weeks = entry.rows.map((row) => Number(row.week)).filter((n) => n > 0);
       items.push({
         kcdm: item.params.kcdm,
-        // 原版 look10319.jsp 用 skbjdm（上课班，如 551982-001）定位，bjdm（行政班）不可混用
-        skbjdm: item.params.skbjdm || item.classCode,
+        // doAdd 的第 10 个参数在实测里是常量 0，不能当上课班号；上课班号固定用 classCode
+        skbjdm: item.classCode,
         bjdm: item.params.bjdm || '',
         bjmc: item.params.bjmc || '',
         kcmc: item.params.kcmc || '',
+        teacher: item.teacher || '',
         className: item.className,
         courseName: item.courseRaw,
         count: entry.rows.length,
@@ -547,6 +548,7 @@ export async function getProgressSummary(session, term) {
     return {
       kcdm: '',
       skbjdm: group.classCode,
+      teacher: '',
       className: group.className,
       courseName,
       courses: courseName ? [courseName] : [],
@@ -623,8 +625,20 @@ export async function exportProgressPdf(session, params) {
     `/ahsljw/frame/pdf?method=download&title=${doubleEncode(fileName)}&fileSavePath=${encodeURIComponent(fileSavePath)}`,
     { method: 'GET', referer: `${session.base}/ahsljw/frame/pdf?method=topdf` },
   );
-  const parts = [params.courseName, params.className, all ? '学期教学进度表' : '教学进度表'].filter(Boolean);
-  const filename = `${safeFileName(parts.join('_'), '教学进度表')}.pdf`;
+  const stripCode = (value) => String(value ?? '').replace(/^\[[^\]]*\]\s*/, '').trim();
+  const stripBracket = (value) => String(value ?? '').replace(/\[[^\]]*\]/g, '').trim();
+  let filename;
+  if (all) {
+    filename = `${safeFileName([params.courseName, params.className, '学期教学进度表'].filter(Boolean).join('_'), '学期教学进度表')}.pdf`;
+  } else {
+    // 原版命名规则：教师名_课程名_班级名.pdf（均不含方括号内容）
+    const parts = [
+      stripBracket(params.teacher),
+      stripCode(params.courseName || params.kcmc),
+      params.className || stripBracket(params.bjmc),
+    ].filter(Boolean);
+    filename = `${safeFileName(parts.join('_'), '教学进度表')}.pdf`;
+  }
   return { filename, buffer: requireDownload(dl, 'pdf') };
 }
 

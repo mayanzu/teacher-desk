@@ -133,12 +133,19 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
                           void download(
                             api.progressPdfUrl(term, {
                               kcdm: group.kcdm,
-                              bjdm: group.skbjdm,
-                              kcmc: group.courseName,
+                              bjdm: group.bjdm || group.skbjdm,
+                              skbjdm: group.skbjdm,
+                              bjmc: group.bjmc || group.className,
+                              teacher: group.teacher || '',
+                              kcmc: group.kcmc || group.courseName,
                               courseName: group.courseName,
                               className: group.className,
                             }),
-                            `${group.courseName || group.className}_教学进度表.pdf`,
+                            `${[
+                              group.teacher || '',
+                              (group.courseName || '').replace(/^\[[^\]]*\]\s*/, ''),
+                              group.className,
+                            ].filter(Boolean).join('_')}.pdf`,
                           )
                         }
                       >

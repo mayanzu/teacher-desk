@@ -46,10 +46,13 @@ test('both progress PDF routes complete and reject invalid downloads', async () 
     skbjdm: '551982-001',
     kcmc: '[24111081]计算机程序设计及应用',
     bjmc: '',
+    teacher: '马仲军[助教]',
     courseName: '[24111081]计算机程序设计及应用',
     className: '示例班',
   });
   assert.match(classResult.filename, /\.pdf$/); assert.equal(classResult.buffer.subarray(0, 5).toString(), '%PDF-');
+  // 文件名为「教师名_课程名_班级名.pdf」，均不含方括号内容
+  assert.equal(classResult.filename, '马仲军_计算机程序设计及应用_示例班.pdf');
   // 分课程必须与原版抓包一致：look_data10319.jsp + bjdm + returnHtml，A4 横向、左右边距 5
   const classBody = bodies[1] || '';
   assert.match(classBody, /look_data10319\.jsp/);

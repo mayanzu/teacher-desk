@@ -4,6 +4,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { readJson, TOO_LARGE } from './readJson.mjs';
 import { config } from './config.mjs';
+import { cacheTtlFor } from './cacheTtl.mjs';
 import { contextFor, persistSession, rotateContext, dropContext, sweepSessions } from './sessionStore.mjs';
 import { getSchedule, getTasks, getTerms, getProgress, getGrades, getProgressClasses, getProgressEntry, buildProgressPayload, saveProgressEntry, getProgressCopyTerms, getProgressCopyClasses, copyProgressFromClass, getProgressSummary, buildProgressCsv, getRoster, buildRosterCsv, buildRosterReportHtml, buildRosterListHtml, getRosterPrintHtml, getCourseGradeClasses, getCourseGradesReport, exportCourseGradesPdf, exportCourseGradesExcel, exportProgressPdf } from './jwxt/index.mjs';
 
@@ -23,13 +24,14 @@ function courseGradeParams(url, term) {
   };
 }
 
-const CACHE_TTL = 5 * 60 * 1000;
+// 缓存上限；每个键的 TTL 按数据变化频率分层（见 cacheTtl.mjs）
 const CACHE_MAX = 200;
 
-async function cached(ctx, key, fn) {
+async function cached(ctx, key, fn, force = false) {
   const now = Date.now();
   const hit = ctx.cache.get(key);
-  if (hit && now - hit.at < CACHE_TTL) {
+  const ttl = cacheTtlFor(key);
+  if (hit && !force && now - hit.at < ttl) {
     // 触发 LRU：把命中的键移到队尾
     ctx.cache.delete(key);
     ctx.cache.set(key, hit);
@@ -218,6 +220,10 @@ const server = createServer(async (req, res) => {
     // 每个浏览器一个独立会话上下文（Cookie: td_sid）
     if (url.pathname.startsWith('/api/')) ctx = contextFor(req, res);
 
+    // ?refresh=1：跳过缓存直接回源（手动刷新用；分层 TTL 下需要这个出口）
+    const refreshRequested = url.searchParams.get('refresh') === '1';
+    const cache = (key, fn) => cached(ctx, key, fn, refreshRequested);
+
     if (url.pathname === '/api/session' && req.method === 'GET') {
       const alive = await sessionAlive(ctx);
       return json(res, 200, { loggedIn: alive, username: alive && ctx.session ? ctx.session.username : '' });
@@ -252,7 +258,7 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === '/api/terms' && req.method === 'GET') {
       const s = await ensureSession(ctx);
-      const terms = await cached(ctx, 'terms', () => getTerms(s));
+      const terms = await cache('terms', () => getTerms(s));
       return json(res, 200, { terms, current: terms[0]?.value || '' });
     }
 
@@ -260,7 +266,7 @@ const server = createServer(async (req, res) => {
       const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cached(ctx, `schedule:${term}`, () => getSchedule(s, term));
+      const data = await cache(`schedule:${term}`, () => getSchedule(s, term));
       return json(res, 200, data);
     }
 
@@ -268,7 +274,7 @@ const server = createServer(async (req, res) => {
       const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cached(ctx, `tasks:${term}`, () => getTasks(s, term));
+      const data = await cache(`tasks:${term}`, () => getTasks(s, term));
       return json(res, 200, data);
     }
 
@@ -307,7 +313,7 @@ const server = createServer(async (req, res) => {
       const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cached(ctx, `progressClasses:${term}`, () => getProgressClasses(s, term));
+      const data = await cache(`progressClasses:${term}`, () => getProgressClasses(s, term));
       return json(res, 200, data);
     }
 
@@ -378,7 +384,7 @@ const server = createServer(async (req, res) => {
       const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cached(ctx, `progressSummary:${term}`, () => getProgressSummary(s, term));
+      const data = await cache(`progressSummary:${term}`, () => getProgressSummary(s, term));
       return json(res, 200, data);
     }
 
@@ -410,7 +416,7 @@ const server = createServer(async (req, res) => {
           content: row.content,
         }));
       } else {
-        const data = await cached(ctx, `progress:${term}`, () => getProgress(s, term));
+        const data = await cache(`progress:${term}`, () => getProgress(s, term));
         rows = data.items.filter(
           (row) =>
             (skbjdm ? row.classCode === skbjdm : true) && (className ? row.classNames === className : true),
@@ -426,7 +432,7 @@ const server = createServer(async (req, res) => {
       const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cached(ctx, `progressClasses:${term}`, () => getProgressClasses(s, term));
+      const data = await cache(`progressClasses:${term}`, () => getProgressClasses(s, term));
       return json(res, 200, {
         items: (data.items ?? []).map((item) => ({
           kcdm: item.params.kcdm,
@@ -488,7 +494,7 @@ const server = createServer(async (req, res) => {
       let teacherCode = '';
       let teacherName = '';
       try {
-        const list = await cached(ctx, `progressClasses:${term}`, () => getProgressClasses(s, term));
+        const list = await cache(`progressClasses:${term}`, () => getProgressClasses(s, term));
         const match = (list.items ?? []).find((item) => item.params?.kcdm === kcdm && item.classCode === skbjdm);
         if (match) {
           courseName = match.courseRaw || '';
@@ -503,7 +509,7 @@ const server = createServer(async (req, res) => {
       }
       const courseCode = courseName.match(/^\[([^\]]+)\]/)?.[1] || '';
       try {
-        const tasks = await cached(ctx, `tasks:${term}`, () => getTasks(s, term));
+        const tasks = await cache(`tasks:${term}`, () => getTasks(s, term));
         const list = tasks.items ?? [];
         const task =
           list.find((item) => courseCode && item.courseCode === courseCode && (!className || item.classNames === className)) ||
@@ -518,7 +524,7 @@ const server = createServer(async (req, res) => {
       }
       let termLabel = '';
       try {
-      const terms = await cached(ctx, 'terms', () => getTerms(s));
+      const terms = await cache('terms', () => getTerms(s));
         termLabel = terms.find((item) => item.value === term)?.label || '';
       } catch {
         termLabel = '';
@@ -557,7 +563,7 @@ const server = createServer(async (req, res) => {
       const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cached(ctx, `progress:${term}`, () => getProgress(s, term));
+      const data = await cache(`progress:${term}`, () => getProgress(s, term));
       return json(res, 200, data);
     }
 
@@ -565,7 +571,7 @@ const server = createServer(async (req, res) => {
       const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cached(ctx, `grades:${term}`, () => getGrades(s, term));
+      const data = await cache(`grades:${term}`, () => getGrades(s, term));
       return json(res, 200, data);
     }
 
@@ -573,7 +579,7 @@ const server = createServer(async (req, res) => {
       const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cached(ctx, `courseGradeClasses:${term}`, () => getCourseGradeClasses(s, term));
+      const data = await cache(`courseGradeClasses:${term}`, () => getCourseGradeClasses(s, term));
       return json(res, 200, data);
     }
 

@@ -176,7 +176,7 @@ ssh root@<router> "docker compose up -d"               # 使用仓库内 docker-
 
 - 容器内为**单进程 Node**（API + 静态资源），监听 `8790`，宿主机映射 `8088`。
 - 会话按浏览器隔离并持久化在卷 `timetable-session`（挂载到容器 `/data`，`SESSION_DIR=/data/sessions`），重建容器无需重新扫码。
-- 可用环境变量：`JWXT_BASE`、`JWXT_INSECURE_TLS`、`PORT`、`SESSION_DIR`、`HOST`。
+- 可用环境变量：`JWXT_BASE`、`JWXT_INSECURE_TLS`、`PORT`、`SESSION_DIR`、`HOST`、`JWXT_FETCH_CONCURRENCY`（上游并发，默认 3）、`JWXT_CACHE_TTL_MS`（缓存兜底 TTL，默认 5 分钟）。
 - 镜像基于 `node:22-alpine`，仅安装生产依赖；前端在构建阶段产出，运行镜像不含源码与开发依赖。
 
 ## 多用户（同一实例多老师共用）
@@ -208,7 +208,7 @@ ssh root@<router> "docker compose up -d"               # 使用仓库内 docker-
 
 运行 `npm test` 执行隔离回归测试，运行 `npm run build` 检查前端类型与生产构建，运行 `npm run lint` 对后端/工具/测试做 `no-undef` 静态检查（前端构建与 `node --check` 都发现不了未定义变量）。`npm run verify` 会依次执行 lint、typecheck、测试与构建；CI 在 Node 20 / 22 上运行同一套检查（见 `.github/workflows/ci.yml`）。测试使用合成数据与 HTML fixture，不向教务系统写入。
 
-查询结果在服务端按浏览器会话缓存约 5 分钟，最多 200 项，并合并并发相同请求；匿名会话 30 分钟未活动回收，已登录会话 7 天未活动回收，内存上下文总数上限 500。`POST /api/login/start` 按来源 IP 限流（5 分钟内 10 次）。写请求校验 `Origin`：无 `Origin` 或同源（含 `localhost` 不同端口）放行。登录 Cookie 持久化到会话目录。
+查询结果在服务端按浏览器会话缓存，最多 200 项，并合并并发相同请求；每个缓存键按数据变化频率分层 TTL：学期列表 12 小时，课表/教学任务/成绩 30 分钟，点名册 10 分钟，其余（教学进度等）5 分钟。需要绕过缓存拿最新数据时，在任意取数接口后加 `?refresh=1`（例如 `/api/schedule?term=2026,0&refresh=1`）。匿名会话 30 分钟未活动回收，已登录会话 7 天未活动回收，内存上下文总数上限 500。`POST /api/login/start` 按来源 IP 限流（5 分钟内 10 次）。写请求校验 `Origin`：无 `Origin` 或同源（含 `localhost` 不同端口）放行。登录 Cookie 持久化到会话目录。
 
 导出的 CSV 会把 `=`、`+`、`-`、`@` 开头的可疑内容转为文本，并对有前导零或超长（≥15 位）的学号使用 `="…"` 形式，避免表格软件执行公式或丢失精度。
 

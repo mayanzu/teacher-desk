@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { CalendarDays, Clock3, MapPin, Users } from './Icons';
+import { useNow } from '../lib/useNow';
 import {
   DAY_LABELS,
   countdownParts,
@@ -10,7 +11,6 @@ import type { CourseInstance } from '../types';
 
 interface NextClassPanelProps {
   next: CourseInstance | null;
-  now: Date;
   todayLabel: string;
   todayCount: number;
   viewWeek: number;
@@ -22,7 +22,6 @@ interface NextClassPanelProps {
 
 export const NextClassPanel = memo(function NextClassPanel({
   next,
-  now,
   todayLabel,
   todayCount,
   viewWeek,
@@ -31,6 +30,9 @@ export const NextClassPanel = memo(function NextClassPanel({
   current,
   totalWeeks,
 }: NextClassPanelProps) {
+  // 秒级 tick 只发生在这个组件内部：父组件（Hero）不必为了倒计时每秒重渲染，
+  // 而且 memo 在这里才真正生效（原来的 now 属性每秒都变，等于没 memo）。
+  const now = useNow(1000);
   const live = next ? now.getTime() >= next.start.getTime() && now.getTime() <= next.end.getTime() : false;
   const delta = next ? (live ? next.end.getTime() - now.getTime() : next.start.getTime() - now.getTime()) : 0;
   const remaining = next ? countdownParts(delta) : null;

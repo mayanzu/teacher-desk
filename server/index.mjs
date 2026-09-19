@@ -8,7 +8,7 @@ import { config } from './config.mjs';
 import { cacheTtlFor } from './cacheTtl.mjs';
 import { fetchConcurrency, mapWithConcurrency } from './jwxt/concurrency.mjs';
 import { contextFor, persistSession, rotateContext, dropContext, sweepSessions } from './sessionStore.mjs';
-import { getSchedule, getTasks, getTerms, getProgress, getGrades, getProgressClasses, getProgressEntry, buildProgressPayload, saveProgressEntry, getProgressCopyTerms, getProgressCopyClasses, copyProgressFromClass, getProgressSummary, buildProgressCsv, getRoster, buildRosterCsv, buildRosterListHtml, getCourseGradeClasses, getCourseGradesReport, exportCourseGradesPdf, exportCourseGradesExcel, exportProgressPdf } from './jwxt/index.mjs';
+import { getSchedule, getTasks, getTerms, getProgress, getGrades, getProgressClasses, getProgressEntry, buildProgressPayload, saveProgressEntry, getProgressCopyTerms, getProgressCopyClasses, copyProgressFromClass, getProgressSummary, buildProgressCsv, getRoster, buildRosterCsv, buildRosterListHtml, exportRosterPdf, getCourseGradeClasses, getCourseGradesReport, exportCourseGradesPdf, exportCourseGradesExcel, exportProgressPdf } from './jwxt/index.mjs';
 
 function courseGradeParams(url, term) {
   return {
@@ -521,6 +521,24 @@ const server = createServer(async (req, res) => {
       if (!term || !kcdm || !skbjdm) return json(res, 400, { error: '缺少 term / kcdm / skbjdm 参数' });
       const data = await cache(`roster:${JSON.stringify([term, kcdm, skbjdm])}`, () => getRoster(s, term, kcdm, skbjdm));
       return json(res, 200, data);
+    }
+
+    if (url.pathname === '/api/roster/export/pdf' && req.method === 'GET') {
+      const s = await ensureSession(ctx);
+      const term = url.searchParams.get('term') || '';
+      const kcdm = url.searchParams.get('kcdm') || '';
+      const skbjdm = url.searchParams.get('skbjdm') || '';
+      if (!term || !kcdm || !skbjdm) return json(res, 400, { error: '缺少 term / kcdm / skbjdm 参数' });
+      const params = {
+        term,
+        kcdm,
+        skbjdm,
+        courseName: url.searchParams.get('courseName') || url.searchParams.get('kcmc') || '',
+        className: url.searchParams.get('className') || url.searchParams.get('bjmc') || '',
+      };
+      const { filename, buffer } = await cacheExport(`exportRosterPdf:${JSON.stringify(params)}`, () => exportRosterPdf(s, params));
+      await sendDownload(req, res, filename, buffer, 'application/pdf');
+      return;
     }
 
     if (url.pathname === '/api/roster/export' && req.method === 'GET') {

@@ -263,9 +263,17 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
                   <button
                     className="kbtn primary"
                     type="button"
-                    onClick={() => void download(api.rosterReportUrl(term, item.kcdm, item.skbjdm), `点名册-${item.skbjdm}.xls`)}
+                    onClick={() =>
+                      void download(
+                        api.rosterPdfUrl(term, item.kcdm, item.skbjdm, {
+                          courseName: item.courseName,
+                          className: item.className,
+                        }),
+                        `点名册-${item.skbjdm}.pdf`,
+                      )
+                    }
                   >
-                    导出点名册
+                    导出点名册 PDF
                   </button>
                   <button
                     className="kbtn ghost"
@@ -273,6 +281,13 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
                     onClick={() => void download(api.rosterExportUrl(term, item.kcdm, item.skbjdm), `点名册-${item.skbjdm}.csv`)}
                   >
                     CSV
+                  </button>
+                  <button
+                    className="kbtn ghost"
+                    type="button"
+                    onClick={() => window.open(api.rosterPrintUrl(term, item.kcdm, item.skbjdm), '_blank', 'noopener')}
+                  >
+                    打印预览
                   </button>
                 </div>
               ))}

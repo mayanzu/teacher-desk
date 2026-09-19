@@ -111,6 +111,10 @@ export const api = {
     ),
   rosterExportUrl: (term: string, kcdm: string, skbjdm: string) =>
     `/api/roster/export?term=${encodeURIComponent(term)}&kcdm=${encodeURIComponent(kcdm)}&skbjdm=${encodeURIComponent(skbjdm)}`,
+  rosterPdfUrl: (term: string, kcdm: string, skbjdm: string, params: Record<string, string> = {}) =>
+    `/api/roster/export/pdf?term=${encodeURIComponent(term)}&kcdm=${encodeURIComponent(kcdm)}&skbjdm=${encodeURIComponent(skbjdm)}&${new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, value]) => Boolean(value))),
+    ).toString()}`,
   rosterReportUrl: (term: string, kcdm: string, skbjdm: string) =>
     `/api/roster/report?term=${encodeURIComponent(term)}&kcdm=${encodeURIComponent(kcdm)}&skbjdm=${encodeURIComponent(skbjdm)}`,
   rosterPrintUrl: (term: string, kcdm: string, skbjdm: string) =>

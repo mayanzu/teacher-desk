@@ -1,4 +1,47 @@
-import { parseTable, clean, parseTerm, gbkFormEncode, csvCell, csvTextNumber, formulaSafeText } from './common.mjs';
+import { parseTable, clean, parseTerm, gbkFormEncode, doubleEncode, safeFileName, requireDownload, csvCell, csvTextNumber, formulaSafeText } from './common.mjs';
+
+/**
+ * 点名册 PDF：交给教务自己的 frame/pdf?method=topdf 渲染点名册报表页
+ * （和成绩、教学进度走同一套转换），所以中文由教务那边出，不依赖本机字体。
+ * 点名册是宽表，按原版习惯用 A4 横向、左右边距 5。
+ */
+export async function exportRosterPdf(session, params) {
+  const { xn, xq } = parseTerm(params.term);
+  const kcdm = String(params.kcdm || '');
+  const skbjdm = String(params.skbjdm || '');
+  if (!kcdm || !skbjdm) throw Object.assign(new Error('缺少 kcdm / skbjdm 参数'), { status: 400 });
+  const reportPath = `/ahsljw/wjstgdfw/cjlr.dycddjc.fkcaskbjdyskdmc_rpt.jsp?xn=${xn}&xq_m=${xq}&kcdm=${encodeURIComponent(kcdm)}&skbjdm=${encodeURIComponent(skbjdm)}`;
+  const pageurl =
+    `/wjstgdfw/cjlr.dycddjc.fkcaskbjdyskdmc_rpt.jsp?xn=${xn}&xq_m=${xq}` +
+    `&kcdm=${encodeURIComponent(kcdm)}&skbjdm=${encodeURIComponent(skbjdm)}`;
+  const title = params.courseName || params.kcmc || '点名册';
+  const body = `pageurl=${doubleEncode(pageurl)}&pageSize=A4&orientation=L&top=0&bottom=10&left=5&right=5&title=${doubleEncode(title)}`;
+  const res = await session.text('/ahsljw/frame/pdf?method=topdf', {
+    method: 'POST',
+    referer: `${session.base}${reportPath}`,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest' },
+    body,
+  });
+  let data = null;
+  try {
+    data = JSON.parse(res.text);
+  } catch {
+    data = null;
+  }
+  if (!data || String(data.status) !== '200' || !data.result) {
+    throw new Error((data && data.message) || '原版 PDF 生成失败');
+  }
+  const [fileName, fileSavePath] = String(data.result).split(';;');
+  const dl = await session.request(
+    `/ahsljw/frame/pdf?method=download&title=${doubleEncode(fileName)}&fileSavePath=${encodeURIComponent(fileSavePath)}`,
+    { method: 'GET', referer: `${session.base}/ahsljw/frame/pdf?method=topdf` },
+  );
+  // 命名沿用其它导出的习惯：课程名_班级名_点名册.pdf（缺参数时退回班级代码）
+  const parts = [params.courseName || params.kcmc, params.className || params.bjmc].filter(Boolean);
+  const filename = `${safeFileName([...parts, '点名册'].join('_'), `点名册-${skbjdm}`)}.pdf`;
+  return { filename, buffer: requireDownload(dl, 'pdf') };
+}
+
 
 export async function getRoster(session, term, kcdm, skbjdm) {
   const { xn, xq } = parseTerm(term);

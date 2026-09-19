@@ -28,18 +28,24 @@ function courseGradeParams(url, term) {
 
 // 缓存上限；每个键的 TTL 按数据变化频率分层（见 cacheTtl.mjs）
 const CACHE_MAX = 200;
+// 导出（PDF/Excel）结果单独放一小块缓存：单次回源最贵（进度 PDF 2 次往返、成绩 PDF 4 次），
+// 但结果是几百 KB 的 buffer，不能按条数 200 塞进主缓存，否则最坏会占上百 MB。
+const EXPORT_MAX = 20;
+const EXPORT_TTL = Number(process.env.JWXT_EXPORT_TTL_MS) > 0 ? Number(process.env.JWXT_EXPORT_TTL_MS) : 5 * 60 * 1000;
 
-async function cached(ctx, key, fn, force = false) {
+async function cached(ctx, key, fn, force = false, options = {}) {
+  const store = options.store || ctx.cache;
+  const ttl = options.ttl || cacheTtlFor(key);
+  const limit = options.max || CACHE_MAX;
   const now = Date.now();
-  const hit = ctx.cache.get(key);
-  const ttl = cacheTtlFor(key);
+  const hit = store.get(key);
   if (hit && !force && now - hit.at < ttl) {
     // 触发 LRU：把命中的键移到队尾
-    ctx.cache.delete(key);
-    ctx.cache.set(key, hit);
+    store.delete(key);
+    store.set(key, hit);
     return hit.value;
   }
-  if (hit) ctx.cache.delete(key);
+  if (hit) store.delete(key);
   // 合并同一会话内对相同键的并发请求，避免重复打上游；
   // 但 ?refresh=1（force）必须真的回源，不能复用刷新前就发出的那次请求。
   if (!force && ctx.inflight.has(key)) return ctx.inflight.get(key);
@@ -48,11 +54,11 @@ async function cached(ctx, key, fn, force = false) {
       const value = await fn();
       // 被 force 重发顶替时，旧请求的结果不再写缓存，避免慢的旧结果覆盖新值
       if (ctx.inflight.get(key) === pending) {
-        ctx.cache.set(key, { at: Date.now(), value });
-        while (ctx.cache.size > CACHE_MAX) {
-          const oldest = ctx.cache.keys().next().value;
+        store.set(key, { at: Date.now(), value });
+        while (store.size > limit) {
+          const oldest = store.keys().next().value;
           if (oldest === undefined) break;
-          ctx.cache.delete(oldest);
+          store.delete(oldest);
         }
       }
       return value;
@@ -207,6 +213,7 @@ function allowCors(req, res) {
 
 function clearCache(ctx) {
   ctx.cache.clear();
+  ctx.exports.clear();
   ctx.inflight.clear();
 }
 
@@ -241,6 +248,8 @@ const server = createServer(async (req, res) => {
     // ?refresh=1：跳过缓存直接回源（手动刷新用；分层 TTL 下需要这个出口）
     const refreshRequested = url.searchParams.get('refresh') === '1';
     const cache = (key, fn) => cached(ctx, key, fn, refreshRequested);
+    // 导出结果（PDF/Excel/点名册报告）走单独的小缓存：回源最贵、结果最大
+    const cacheExport = (key, fn) => cached(ctx, key, fn, refreshRequested, { store: ctx.exports, ttl: EXPORT_TTL, max: EXPORT_MAX });
 
     if (url.pathname === '/api/session' && req.method === 'GET') {
       const alive = await sessionAlive(ctx);
@@ -382,7 +391,7 @@ const server = createServer(async (req, res) => {
       const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const { filename, buffer } = await exportProgressPdf(s, {
+      const params = {
         term,
         scope: url.searchParams.get('scope') || '',
         kcdm: url.searchParams.get('kcdm') || '',
@@ -393,7 +402,9 @@ const server = createServer(async (req, res) => {
         kcmc: url.searchParams.get('kcmc') || '',
         courseName: url.searchParams.get('courseName') || '',
         className: url.searchParams.get('className') || '',
-      });
+      };
+      // 同一份 PDF 的重复下载（连点两次、预览后又下载）不再重复打上游
+      const { filename, buffer } = await cacheExport(`exportProgressPdf:${JSON.stringify(params)}`, () => exportProgressPdf(s, params));
       await sendDownload(req, res, filename, buffer, 'application/pdf');
       return;
     }
@@ -576,7 +587,7 @@ const server = createServer(async (req, res) => {
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
       const params = courseGradeParams(url, term);
       if (!params.kcdm || !params.bjdm) return json(res, 400, { error: '缺少 kcdm / bjdm 参数' });
-      const { filename, buffer } = await exportCourseGradesPdf(s, params);
+      const { filename, buffer } = await cacheExport(`exportCourseGradesPdf:${JSON.stringify(params)}`, () => exportCourseGradesPdf(s, params));
       await sendDownload(req, res, filename, buffer, 'application/pdf');
       return;
     }
@@ -587,7 +598,7 @@ const server = createServer(async (req, res) => {
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
       const params = courseGradeParams(url, term);
       if (!params.kcdm || !params.bjdm) return json(res, 400, { error: '缺少 kcdm / bjdm 参数' });
-      const { filename, buffer } = await exportCourseGradesExcel(s, params);
+      const { filename, buffer } = await cacheExport(`exportCourseGradesExcel:${JSON.stringify(params)}`, () => exportCourseGradesExcel(s, params));
       await sendDownload(req, res, filename, buffer, 'application/vnd.ms-excel');
       return;
     }

@@ -60,7 +60,7 @@ function parseCookies(header) {
 }
 
 function createContext(sid) {
-  return { sid, session: null, loginFlow: createLoginFlow(), cache: new Map(), inflight: new Map(), lastSeen: Date.now() };
+  return { sid, session: null, loginFlow: createLoginFlow(), cache: new Map(), exports: new Map(), inflight: new Map(), lastSeen: Date.now() };
 }
 
 function loadPersisted(sid) {
@@ -125,6 +125,7 @@ export function dropContext(ctx) {
     /* ignore */
   }
   ctx.cache.clear();
+  ctx.exports.clear();
   ctx.inflight.clear();
   try {
     rmSync(sidFile(ctx.sid), { force: true });
@@ -185,6 +186,7 @@ export function rotateContext(ctx, res) {
   try { rmSync(sidFile(oldSid), { force: true }); } catch { /* best effort */ }
   ctx.sid = randomBytes(18).toString('hex');
   ctx.cache.clear();
+  ctx.exports.clear();
   ctx.inflight.clear();
   contexts.set(ctx.sid, ctx);
   setCookie(res, ctx.sid);

@@ -6,9 +6,10 @@ import { extname, isAbsolute, join, normalize, relative, resolve, sep } from 'no
 import { readJson, TOO_LARGE } from './readJson.mjs';
 import { config } from './config.mjs';
 import { cacheTtlFor } from './cacheTtl.mjs';
+import { buildRosterPdf, resolveRosterFont } from './jwxt/rosterPdf.mjs';
 import { fetchConcurrency, mapWithConcurrency } from './jwxt/concurrency.mjs';
 import { contextFor, persistSession, rotateContext, dropContext, sweepSessions } from './sessionStore.mjs';
-import { getSchedule, getTasks, getTerms, getProgress, getGrades, getProgressClasses, getProgressEntry, buildProgressPayload, saveProgressEntry, getProgressCopyTerms, getProgressCopyClasses, copyProgressFromClass, getProgressSummary, buildProgressCsv, getRoster, buildRosterCsv, buildRosterListHtml, exportRosterPdf, getCourseGradeClasses, getCourseGradesReport, exportCourseGradesPdf, exportCourseGradesExcel, exportProgressPdf } from './jwxt/index.mjs';
+import { getSchedule, getTasks, getTerms, getProgress, getGrades, getProgressClasses, getProgressEntry, buildProgressPayload, saveProgressEntry, getProgressCopyTerms, getProgressCopyClasses, copyProgressFromClass, getProgressSummary, buildProgressCsv, getRoster, buildRosterCsv, buildRosterListHtml, getCourseGradeClasses, getCourseGradesReport, exportCourseGradesPdf, exportCourseGradesExcel, exportProgressPdf } from './jwxt/index.mjs';
 
 function courseGradeParams(url, term) {
   return {
@@ -292,6 +293,26 @@ const server = createServer(async (req, res) => {
     // 导出结果（PDF/Excel/点名册报告）走单独的小缓存：回源最贵、结果最大
     const cacheExport = (key, fn) => cached(ctx, key, fn, refreshRequested, { store: ctx.exports, ttl: EXPORT_TTL, max: EXPORT_MAX });
 
+    // 点名册报表数据（名单 + 课程/班级/任课教师/学期名），PDF 导出与打印预览共用
+    const loadRosterReport = async (s, term, kcdm, skbjdm) => {
+      const [data, schedule, classes, terms] = await mapWithConcurrency([
+        () => cache(`roster:${JSON.stringify([term, kcdm, skbjdm])}`, () => getRoster(s, term, kcdm, skbjdm)),
+        () => cache(`schedule:${term}`, () => getSchedule(s, term)).catch(() => ({})),
+        () => cache(`progressClasses:${term}`, () => getProgressClasses(s, term)).catch(() => ({})),
+        () => cache('terms', () => getTerms(s)).catch(() => []),
+      ], fetchConcurrency(), (load) => load());
+      const match = (classes.items ?? []).find((item) => item.params?.kcdm === kcdm && item.classCode === skbjdm);
+      const jsxm = match?.params?.jsxm || '';
+      return {
+        items: data.items ?? [],
+        courseName: match?.courseRaw || '',
+        className: match?.className || '',
+        teacherName: jsxm.replace(/\[[^\]]*\]/, '').trim(),
+        teacher: schedule.teacher || '',
+        termLabel: terms.find((item) => item.value === term)?.label || '',
+      };
+    };
+
     if (url.pathname === '/api/session' && req.method === 'GET') {
       const alive = await sessionAlive(ctx);
       return json(res, 200, { loggedIn: alive, username: alive && ctx.session ? ctx.session.username : '' });
@@ -529,15 +550,19 @@ const server = createServer(async (req, res) => {
       const kcdm = url.searchParams.get('kcdm') || '';
       const skbjdm = url.searchParams.get('skbjdm') || '';
       if (!term || !kcdm || !skbjdm) return json(res, 400, { error: '缺少 term / kcdm / skbjdm 参数' });
-      const params = {
-        term,
-        kcdm,
-        skbjdm,
-        courseName: url.searchParams.get('courseName') || url.searchParams.get('kcmc') || '',
-        className: url.searchParams.get('className') || url.searchParams.get('bjmc') || '',
-      };
-      const { filename, buffer } = await cacheExport(`exportRosterPdf:${JSON.stringify(params)}`, () => exportRosterPdf(s, params));
-      await sendDownload(req, res, filename, buffer, 'application/pdf');
+      // 本机排版出 PDF：内容和打印预览一致（完整名单、没有教务报表页的页眉和翻页）
+      const fontPath = resolveRosterFont();
+      if (!fontPath) {
+        return json(res, 500, {
+          error:
+            '服务器上没有可用的中文字体，无法生成点名册 PDF：请安装中文字体（如 fonts-arphic-gbsn00lp、fonts-wqy-zenhei），或用 ROSTER_PDF_FONT 指定一个 TTF/OTF 字体文件路径；也可以先导出 CSV。',
+        });
+      }
+      const report = await loadRosterReport(s, term, kcdm, skbjdm);
+      const buffer = await cacheExport(`exportRosterPdf:${JSON.stringify([term, kcdm, skbjdm])}`, () =>
+        buildRosterPdf({ term, kcdm, skbjdm, ...report, fontPath }),
+      );
+      await sendDownload(req, res, `点名册-${skbjdm}.pdf`, buffer, 'application/pdf');
       return;
     }
 
@@ -561,34 +586,14 @@ const server = createServer(async (req, res) => {
       const skbjdm = url.searchParams.get('skbjdm') || '';
       const asHtml = url.searchParams.get('format') === 'html';
       if (!term || !kcdm || !skbjdm) return json(res, 400, { error: '缺少 term / kcdm / skbjdm 参数' });
-      // Only fetch fields used by buildRosterListHtml; optional metadata may fail independently.
-      const [data, schedule, classes, terms] = await mapWithConcurrency([
-        () => cache(`roster:${JSON.stringify([term, kcdm, skbjdm])}`, () => getRoster(s, term, kcdm, skbjdm)),
-        () => cache(`schedule:${term}`, () => getSchedule(s, term)).catch(() => ({})),
-        () => cache(`progressClasses:${term}`, () => getProgressClasses(s, term)).catch(() => ({})),
-        () => cache('terms', () => getTerms(s)).catch(() => []),
-      ], fetchConcurrency(), (load) => load());
-      const match = (classes.items ?? []).find((item) => item.params?.kcdm === kcdm && item.classCode === skbjdm);
-      const courseName = match?.courseRaw || '';
-      const className = match?.className || '';
-      const jsxm = match?.params?.jsxm || '';
-      const teacherCode = jsxm.match(/\[([^\]]+)\]/)?.[1] || match?.params?.jsdm || '';
-      const teacherName = jsxm.replace(/\[[^\]]*\]/, '').trim();
-      const teacher = schedule.teacher || '';
-      const termLabel = terms.find((item) => item.value === term)?.label || '';
+      const report = await loadRosterReport(s, term, kcdm, skbjdm);
       const format = url.searchParams.get('format') || 'xls';
       const printMode = format === 'print';
       const html = buildRosterListHtml({
         term,
-        termLabel,
+        ...report,
         kcdm,
         skbjdm,
-        courseName,
-        className,
-        teacherCode,
-        teacherName,
-        teacher,
-        items: data.items ?? [],
         autoPrint: printMode,
       });
       const body = Buffer.from(html, 'utf8');
@@ -601,7 +606,7 @@ const server = createServer(async (req, res) => {
         res.end(body);
         return;
       }
-      const filename = `点名册-${className || skbjdm}.${asHtml ? 'html' : 'xls'}`;
+      const filename = `点名册-${report.className || skbjdm}.${asHtml ? 'html' : 'xls'}`;
       await sendDownload(req, res, filename, body, asHtml ? 'text/html; charset=utf-8' : 'application/vnd.ms-excel; charset=utf-8');
       return;
     }

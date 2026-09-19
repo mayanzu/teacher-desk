@@ -344,6 +344,22 @@ test('encoded traversal cannot escape the static directory', async () => {
     assert.match(escaped, /404/);
     const normal = await request('/index.html');
     assert.match(normal, /ok<\/html>/);
+    const base = `http://127.0.0.1:${port}`;
+    const first = await fetch(`${base}/index.html`);
+    assert.equal(await first.text(), '<html>ok</html>');
+    const etag = first.headers.get('etag');
+    assert.ok(etag);
+    const cached = await fetch(`${base}/index.html`, { headers: { 'If-None-Match': etag } });
+    assert.equal(cached.status, 304);
+    assert.equal(await cached.text(), '');
+    const head = await fetch(`${base}/index.html`, { method: 'HEAD' });
+    assert.equal(head.status, 200);
+    assert.equal(await head.text(), '');
+    writeFileSync(join(dist, 'index.html'), '<html>updated content</html>');
+    const updated = await fetch(`${base}/index.html`, { headers: { 'If-None-Match': etag } });
+    assert.equal(updated.status, 200);
+    assert.equal(await updated.text(), '<html>updated content</html>');
+
   } finally {
     if (child.exitCode === null) {
       const stopped = new Promise((r) => child.once('exit', r));

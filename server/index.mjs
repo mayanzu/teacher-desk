@@ -1,12 +1,14 @@
 import { sessionAlive } from './sessionHealth.mjs';
 import { createServer } from 'node:http';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { stat, readFile } from 'node:fs/promises';
+import { sendBody } from './response.mjs';
 import { extname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { readJson, TOO_LARGE } from './readJson.mjs';
 import { config } from './config.mjs';
 import { cacheTtlFor } from './cacheTtl.mjs';
+import { fetchConcurrency, mapWithConcurrency } from './jwxt/concurrency.mjs';
 import { contextFor, persistSession, rotateContext, dropContext, sweepSessions } from './sessionStore.mjs';
-import { getSchedule, getTasks, getTerms, getProgress, getGrades, getProgressClasses, getProgressEntry, buildProgressPayload, saveProgressEntry, getProgressCopyTerms, getProgressCopyClasses, copyProgressFromClass, getProgressSummary, buildProgressCsv, getRoster, buildRosterCsv, buildRosterReportHtml, buildRosterListHtml, getRosterPrintHtml, getCourseGradeClasses, getCourseGradesReport, exportCourseGradesPdf, exportCourseGradesExcel, exportProgressPdf } from './jwxt/index.mjs';
+import { getSchedule, getTasks, getTerms, getProgress, getGrades, getProgressClasses, getProgressEntry, buildProgressPayload, saveProgressEntry, getProgressCopyTerms, getProgressCopyClasses, copyProgressFromClass, getProgressSummary, buildProgressCsv, getRoster, buildRosterCsv, buildRosterListHtml, getCourseGradeClasses, getCourseGradesReport, exportCourseGradesPdf, exportCourseGradesExcel, exportProgressPdf } from './jwxt/index.mjs';
 
 function courseGradeParams(url, term) {
   return {
@@ -111,15 +113,10 @@ function json(res, status, payload) {
  * 由前端还原成 Blob 下载：IDM 等下载管理器看不到文件响应，不会再出现「IDM 一份 + 浏览器空文件」的双下载。
  * 直接访问（浏览器地址栏/普通链接）仍返回附件流。
  */
-function sendDownload(req, res, filename, buffer, contentType) {
+async function sendDownload(req, res, filename, buffer, contentType) {
   if (/\bapplication\/json\b/.test(String(req.headers.accept || ''))) {
     const body = JSON.stringify({ filename, contentType, base64: buffer.toString('base64') });
-    res.writeHead(200, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-      'Content-Length': Buffer.byteLength(body),
-    });
-    return res.end(body);
+    return sendBody(req, res, body, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   }
   res.writeHead(200, {
     'Content-Type': contentType,
@@ -146,8 +143,8 @@ const MIME = {
 
 const WEB_DIST = process.env.WEB_DIST || join(config.root, 'web', 'dist');
 
-function serveStatic(res, pathname) {
-  if (!existsSync(WEB_DIST)) return false;
+async function serveStatic(req, res, pathname) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false;
   if (pathname.startsWith('/api/')) return false;
   let decoded;
   try {
@@ -163,17 +160,33 @@ function serveStatic(res, pathname) {
   // normalize 会把 "//../" 折叠掉（Linux 上尤其明显），必须在归一化前按路径段拒绝 ..
   if (decoded.split(/[/\\]+/).includes('..')) return false;
   let filePath = resolved;
-  if (!existsSync(filePath) || !statSync(filePath).isFile()) {
+  const fileStat = async (path) => {
+    try { return await stat(path); }
+    catch (error) { if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null; throw error; }
+  };
+  let info = await fileStat(filePath);
+  if (!info?.isFile()) {
     filePath = join(WEB_DIST, 'index.html');
-    if (!existsSync(filePath)) return false;
+    info = await fileStat(filePath);
+    if (!info?.isFile()) return false;
   }
-  const body = readFileSync(filePath);
   const cacheControl = filePath.includes(`${sep}assets${sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache';
-  res.writeHead(200, {
-    'Content-Type': MIME[extname(filePath).toLowerCase()] || 'application/octet-stream',
-    'Cache-Control': cacheControl,
-  });
-  res.end(body);
+  const etag = `W/"${info.size.toString(16)}-${info.mtimeMs.toString(16)}"`;
+  res.setHeader('ETag', etag);
+  res.setHeader('Cache-Control', cacheControl);
+  res.setHeader('Vary', [res.getHeader('Vary'), 'Accept-Encoding'].filter(Boolean).join(', '));
+  if (String(req.headers['if-none-match'] || '').split(/,\s*/).some(tag => tag === '*' || tag.replace(/^W\//, '') === etag.slice(2))) {
+    res.writeHead(304);
+    res.end();
+    return true;
+  }
+  const contentType = MIME[extname(filePath).toLowerCase()] || 'application/octet-stream';
+  if (req.method === 'HEAD') {
+    res.writeHead(200, { 'Content-Type': contentType });
+    res.end();
+    return true;
+  }
+  await sendBody(req, res, await readFile(filePath), { 'Content-Type': contentType }, /^(text\/|application\/(json|manifest)|image\/svg)/.test(contentType));
   return true;
 }
 
@@ -376,7 +389,7 @@ const server = createServer(async (req, res) => {
         courseName: url.searchParams.get('courseName') || '',
         className: url.searchParams.get('className') || '',
       });
-      sendDownload(req, res, filename, buffer, 'application/pdf');
+      await sendDownload(req, res, filename, buffer, 'application/pdf');
       return;
     }
 
@@ -424,7 +437,7 @@ const server = createServer(async (req, res) => {
       }
       const csv = buildProgressCsv(rows);
       const filename = `${className || '全部班级'}-教学进度表.csv`;
-      sendDownload(req, res, filename, Buffer.from(csv, 'utf8'), 'text/csv; charset=utf-8');
+      await sendDownload(req, res, filename, Buffer.from(csv, 'utf8'), 'text/csv; charset=utf-8');
       return;
     }
 
@@ -449,7 +462,7 @@ const server = createServer(async (req, res) => {
       const kcdm = url.searchParams.get('kcdm') || '';
       const skbjdm = url.searchParams.get('skbjdm') || '';
       if (!term || !kcdm || !skbjdm) return json(res, 400, { error: '缺少 term / kcdm / skbjdm 参数' });
-      const data = await getRoster(s, term, kcdm, skbjdm);
+      const data = await cache(`roster:${JSON.stringify([term, kcdm, skbjdm])}`, () => getRoster(s, term, kcdm, skbjdm));
       return json(res, 200, data);
     }
 
@@ -459,10 +472,10 @@ const server = createServer(async (req, res) => {
       const kcdm = url.searchParams.get('kcdm') || '';
       const skbjdm = url.searchParams.get('skbjdm') || '';
       if (!term || !kcdm || !skbjdm) return json(res, 400, { error: '缺少 term / kcdm / skbjdm 参数' });
-      const data = await getRoster(s, term, kcdm, skbjdm);
+      const data = await cache(`roster:${JSON.stringify([term, kcdm, skbjdm])}`, () => getRoster(s, term, kcdm, skbjdm));
       const csv = buildRosterCsv(data.items ?? []);
       const filename = `点名册-${skbjdm}.csv`;
-      sendDownload(req, res, filename, Buffer.from(csv, 'utf8'), 'text/csv; charset=utf-8');
+      await sendDownload(req, res, filename, Buffer.from(csv, 'utf8'), 'text/csv; charset=utf-8');
       return;
     }
 
@@ -473,62 +486,21 @@ const server = createServer(async (req, res) => {
       const skbjdm = url.searchParams.get('skbjdm') || '';
       const asHtml = url.searchParams.get('format') === 'html';
       if (!term || !kcdm || !skbjdm) return json(res, 400, { error: '缺少 term / kcdm / skbjdm 参数' });
-      const data = await getRoster(s, term, kcdm, skbjdm);
-      let weeks = [];
-      try {
-        const entry = await getProgressEntry(s, term, { kcdm, bjdm: skbjdm, skbjdm: skbjdm });
-        weeks = (entry.rows ?? []).map((row) => ({ week: row.week, date: row.date }));
-      } catch {
-        weeks = [];
-      }
-      let teacher = '';
-      try {
-        teacher = (await getSchedule(s, term)).teacher || '';
-      } catch {
-        teacher = '';
-      }
-      let courseName = '';
-      let className = '';
-      let department = '';
-      let credit = '';
-      let teacherCode = '';
-      let teacherName = '';
-      try {
-        const list = await cache(`progressClasses:${term}`, () => getProgressClasses(s, term));
-        const match = (list.items ?? []).find((item) => item.params?.kcdm === kcdm && item.classCode === skbjdm);
-        if (match) {
-          courseName = match.courseRaw || '';
-          className = match.className || '';
-          const jsxm = match.params?.jsxm || '';
-          teacherCode = jsxm.match(/\[([^\]]+)\]/)?.[1] || match.params?.jsdm || '';
-          teacherName = jsxm.replace(/\[[^\]]*\]/, '').trim();
-        }
-      } catch {
-        courseName = '';
-        className = '';
-      }
-      const courseCode = courseName.match(/^\[([^\]]+)\]/)?.[1] || '';
-      try {
-        const tasks = await cache(`tasks:${term}`, () => getTasks(s, term));
-        const list = tasks.items ?? [];
-        const task =
-          list.find((item) => courseCode && item.courseCode === courseCode && (!className || item.classNames === className)) ||
-          list.find((item) => courseCode && item.courseCode === courseCode);
-        if (task) {
-          department = task.department || '';
-          credit = task.credit || '';
-        }
-      } catch {
-        department = '';
-        credit = '';
-      }
-      let termLabel = '';
-      try {
-      const terms = await cache('terms', () => getTerms(s));
-        termLabel = terms.find((item) => item.value === term)?.label || '';
-      } catch {
-        termLabel = '';
-      }
+      // Only fetch fields used by buildRosterListHtml; optional metadata may fail independently.
+      const [data, schedule, classes, terms] = await mapWithConcurrency([
+        () => cache(`roster:${JSON.stringify([term, kcdm, skbjdm])}`, () => getRoster(s, term, kcdm, skbjdm)),
+        () => cache(`schedule:${term}`, () => getSchedule(s, term)).catch(() => ({})),
+        () => cache(`progressClasses:${term}`, () => getProgressClasses(s, term)).catch(() => ({})),
+        () => cache('terms', () => getTerms(s)).catch(() => []),
+      ], fetchConcurrency(), (load) => load());
+      const match = (classes.items ?? []).find((item) => item.params?.kcdm === kcdm && item.classCode === skbjdm);
+      const courseName = match?.courseRaw || '';
+      const className = match?.className || '';
+      const jsxm = match?.params?.jsxm || '';
+      const teacherCode = jsxm.match(/\[([^\]]+)\]/)?.[1] || match?.params?.jsdm || '';
+      const teacherName = jsxm.replace(/\[[^\]]*\]/, '').trim();
+      const teacher = schedule.teacher || '';
+      const termLabel = terms.find((item) => item.value === term)?.label || '';
       const format = url.searchParams.get('format') || 'xls';
       const printMode = format === 'print';
       const html = buildRosterListHtml({
@@ -555,7 +527,7 @@ const server = createServer(async (req, res) => {
         return;
       }
       const filename = `点名册-${className || skbjdm}.${asHtml ? 'html' : 'xls'}`;
-      sendDownload(req, res, filename, body, asHtml ? 'text/html; charset=utf-8' : 'application/vnd.ms-excel; charset=utf-8');
+      await sendDownload(req, res, filename, body, asHtml ? 'text/html; charset=utf-8' : 'application/vnd.ms-excel; charset=utf-8');
       return;
     }
 
@@ -600,7 +572,7 @@ const server = createServer(async (req, res) => {
       const params = courseGradeParams(url, term);
       if (!params.kcdm || !params.bjdm) return json(res, 400, { error: '缺少 kcdm / bjdm 参数' });
       const { filename, buffer } = await exportCourseGradesPdf(s, params);
-      sendDownload(req, res, filename, buffer, 'application/pdf');
+      await sendDownload(req, res, filename, buffer, 'application/pdf');
       return;
     }
 
@@ -611,14 +583,16 @@ const server = createServer(async (req, res) => {
       const params = courseGradeParams(url, term);
       if (!params.kcdm || !params.bjdm) return json(res, 400, { error: '缺少 kcdm / bjdm 参数' });
       const { filename, buffer } = await exportCourseGradesExcel(s, params);
-      sendDownload(req, res, filename, buffer, 'application/vnd.ms-excel');
+      await sendDownload(req, res, filename, buffer, 'application/vnd.ms-excel');
       return;
     }
 
-    if (serveStatic(res, url.pathname)) return;
+    if (await serveStatic(req, res, url.pathname)) return;
 
     json(res, 404, { error: 'not found' });
   } catch (error) {
+    if (res.destroyed) return;
+    if (res.headersSent) { res.destroy(error); return; }
     const status = error?.status || 500;
     if (status >= 500) console.error('[api]', error);
     if (error?.status === 401 && ctx) dropContext(ctx);

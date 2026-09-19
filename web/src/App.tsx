@@ -40,7 +40,6 @@ export default function App() {
     setBootError('');
     (async () => {
       try {
-        await api.health();
         const current = await api.session();
         if (!cancelled) setSession(current);
       } catch (err) {

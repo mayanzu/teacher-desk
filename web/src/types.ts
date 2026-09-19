@@ -51,8 +51,6 @@ export interface TermsData {
 export interface SessionData {
   loggedIn: boolean;
   username: string;
-  /** 演示站延迟提示（服务端 DEMO_LATENCY_HINT）：仅云服务器部署会带，本地部署为空 */
-  latencyHint?: string;
 }
 
 export interface LoginStart {

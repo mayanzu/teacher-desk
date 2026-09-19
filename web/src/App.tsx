@@ -23,7 +23,6 @@ export default function App() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [termsLoading, setTermsLoading] = useState(false);
   const [progressDirty, setProgressDirty] = useState(false);
-  const [latencyHint, setLatencyHint] = useState('');
 
   const resetSessionState = useCallback(() => {
     clearApiCache();
@@ -43,10 +42,7 @@ export default function App() {
     (async () => {
       try {
         const current = await api.session();
-        if (!cancelled) {
-          setSession(current);
-          setLatencyHint(current.latencyHint || '');
-        }
+        if (!cancelled) setSession(current);
       } catch (err) {
         if (!cancelled) setBootError(errorMessage(err));
       } finally {
@@ -210,7 +206,7 @@ export default function App() {
   }
 
   if (!session.loggedIn) {
-    return <LoginPage onLoggedIn={handleLoggedIn} latencyHint={latencyHint} />;
+    return <LoginPage onLoggedIn={handleLoggedIn} />;
   }
 
   return (

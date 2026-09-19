@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, errorMessage } from '../api';
 import type { LoginState } from '../types';
-import { AlertTriangle, CheckCircle2, CloudAlert, QrCodeIcon, RefreshCw, ScanLine } from './Icons';
+import { AlertTriangle, CheckCircle2, QrCodeIcon, RefreshCw, ScanLine } from './Icons';
 
 const POLL_INTERVAL = 1500;
 
@@ -9,11 +9,9 @@ type Phase = 'starting' | 'waiting' | 'success' | 'error';
 
 interface LoginPageProps {
   onLoggedIn: () => void;
-  /** 演示站延迟提示（服务端下发）：非空时在登录页显示「云服务器有额外延迟，建议本地部署」 */
-  latencyHint?: string;
 }
 
-export function LoginPage({ onLoggedIn, latencyHint }: LoginPageProps) {
+export function LoginPage({ onLoggedIn }: LoginPageProps) {
   const [phase, setPhase] = useState<Phase>('starting');
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [message, setMessage] = useState('正在生成二维码…');
@@ -122,13 +120,6 @@ export function LoginPage({ onLoggedIn, latencyHint }: LoginPageProps) {
           <li>微信 / 相机 / 其他扫码器识别无效</li>
           <li>登录态过期会自动回到本页</li>
         </ul>
-
-        {latencyHint && (
-          <p className="login-latency-hint" role="note">
-            <CloudAlert aria-hidden="true" />
-            <span>{latencyHint}</span>
-          </p>
-        )}
       </div>
 
       <div className="panel-card login-card">

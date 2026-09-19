@@ -39,9 +39,6 @@ const EXPORT_MAX = 20;
 
 // 预热开关：JWXT_WARMUP=0 可关掉（比如上游压力大时）
 const WARMUP = process.env.JWXT_WARMUP !== '0';
-// 演示站延迟提示：给「部署在云服务器」的实例用。只有在部署方设置了 DEMO_LATENCY_HINT
-// 时，登录页才显示这段说明（本地部署 / Windows 版不设它，界面保持干净）。
-const DEMO_LATENCY_HINT = (process.env.DEMO_LATENCY_HINT || '').trim();
 
 // 登录限流：按来源 IP 限制 /api/login/start 的频率，避免匿名请求刷接口。
 const LOGIN_WINDOW = 5 * 60 * 1000;
@@ -309,7 +306,7 @@ async function handleRequest(req, res, scope) {
 
     if (url.pathname === '/api/session' && req.method === 'GET') {
       const alive = await withPriority('high', () => sessionAlive(ctx));
-      return json(res, 200, { loggedIn: alive, username: alive && ctx.session ? ctx.session.username : '', latencyHint: DEMO_LATENCY_HINT });
+      return json(res, 200, { loggedIn: alive, username: alive && ctx.session ? ctx.session.username : '' });
     }
 
     if (url.pathname === '/api/login/start' && req.method === 'POST') {

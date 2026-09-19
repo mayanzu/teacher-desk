@@ -124,15 +124,6 @@ export function AlertTriangle(props: IconProps) {
   );
 }
 
-export function CloudAlert(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M6.8 18.5A4.3 4.3 0 0 1 6 10a5.4 5.4 0 0 1 10.4-1.2A3.9 3.9 0 0 1 17.6 18.5Z" />
-      <path d="M12 9.8v3.4M12 16h.01" />
-    </Icon>
-  );
-}
-
 export function CheckCircle2(props: IconProps) {
   return (
     <Icon {...props}>

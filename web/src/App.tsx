@@ -79,7 +79,7 @@ export default function App() {
     setTermsLoading(true);
     (async () => {
       try {
-        const payload = await api.terms();
+        const payload = await api.terms({ refresh: termsAttempt > 0 });
         if (cancelled) return;
         const fallback = payload.terms.length === 0 ? fallbackTerms() : null;
         const list = fallback ? fallback.terms : payload.terms;

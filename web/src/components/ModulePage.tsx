@@ -111,7 +111,7 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
     setRows([]);
     setNote('');
     api
-      .feature(module, term)
+      .feature(module, term, { refresh: attempt > 0 })
       .then((payload) => {
         if (cancelled) return;
         const items = (payload as FeaturePayload | null)?.items;
@@ -144,7 +144,7 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
     let cancelled = false;
     setRosterClasses([]);
     api
-      .rosterClasses(term)
+      .rosterClasses(term, { refresh: attempt > 0 })
       .then((data) => {
         if (!cancelled) setRosterClasses(data.items ?? []);
       })
@@ -154,7 +154,7 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
     return () => {
       cancelled = true;
     };
-  }, [module, term]);
+  }, [module, term, attempt]);
 
   return (
     <section className="section" aria-labelledby={`${module}Title`}>

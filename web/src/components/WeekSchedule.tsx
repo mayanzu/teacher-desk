@@ -99,7 +99,7 @@ export function WeekSchedule({ term, userId, onUnauthorized }: WeekScheduleProps
     setError('');
     setSelected(null);
     api
-      .schedule(term)
+      .schedule(term, { refresh: attempt > 0 })
       .then((payload) => {
         if (cancelled) return;
         setData(payload);

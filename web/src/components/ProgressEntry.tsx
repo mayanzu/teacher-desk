@@ -77,7 +77,7 @@ export function ProgressEntry({ term, onUnauthorized, onDirtyChange }: ProgressE
     setError('');
     showNotice('');
     api
-      .progressClasses(term)
+      .progressClasses(term, { refresh: listAttempt > 0 })
       .then((data) => {
         if (!cancelled) setClasses(data.items ?? []);
       })

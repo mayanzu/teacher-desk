@@ -38,7 +38,7 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
     setExpanded(null);
     setReport(null);
     api
-      .courseGradeClasses(term)
+      .courseGradeClasses(term, { refresh: attempt > 0 })
       .then((data) => {
         if (cancelled) return;
         setClasses(data.items ?? []);
@@ -97,14 +97,18 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
     setReportError('');
     setReport(null);
     api
-      .courseGrades(term, {
-        kcdm: expandedItem.kcdm,
-        bjdm: expandedItem.bjdm,
-        bjmc: expandedItem.className,
-        flag: '1',
-        dyfs: 'dl',
-        qmzhC: 'zhC',
-      })
+      .courseGrades(
+        term,
+        {
+          kcdm: expandedItem.kcdm,
+          bjdm: expandedItem.bjdm,
+          bjmc: expandedItem.className,
+          flag: '1',
+          dyfs: 'dl',
+          qmzhC: 'zhC',
+        },
+        { refresh: attempt > 0 },
+      )
       .then((data) => {
         if (!cancelled) setReport(data);
       })
@@ -122,7 +126,7 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
     return () => {
       cancelled = true;
     };
-  }, [term, expandedItem, onUnauthorized]);
+  }, [term, expandedItem, attempt, onUnauthorized]);
 
   const pdfUrl = (item: CourseGradeClass) =>
     api.courseGradesPdfUrl(term, {

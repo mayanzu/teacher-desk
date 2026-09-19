@@ -60,24 +60,42 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return payload as T;
 }
 
+/**
+ * 「刷新」按钮传 refresh=true：请求带 `?refresh=1`，让服务端跳过缓存直接回源。
+ *
+ * 服务端查询缓存按数据变化频率分层（学期列表 12 小时、课表/教学任务/成绩 30 分钟、
+ * 点名册 10 分钟、教学进度 5 分钟，见 server/cacheTtl.mjs），不带这个参数时
+ * 手动刷新可能拿到 TTL 内的旧数据。
+ */
+export type CacheOptions = { refresh?: boolean };
+
+function withRefresh(path: string, options: CacheOptions = {}): string {
+  if (!options.refresh) return path;
+  return `${path}${path.includes('?') ? '&' : '?'}refresh=1`;
+}
+
 export const api = {
   health: () => request<{ ok: boolean }>('/api/health'),
   session: () => request<SessionData>('/api/session'),
   loginStart: () => request<LoginStart>('/api/login/start', { method: 'POST' }),
   loginStatus: () => request<LoginState>('/api/login/status'),
   logout: () => request<{ ok: boolean }>('/api/logout', { method: 'POST', signal: AbortSignal.timeout(5000) }),
-  terms: () => request<TermsData>('/api/terms'),
-  schedule: (term: string) => request<ScheduleData>(`/api/schedule?term=${encodeURIComponent(term)}`),
-  feature: (feature: ModuleKey, term: string) => request<unknown>(`/api/${feature}?term=${encodeURIComponent(term)}`),
-  progressSummary: (term: string) => request<ProgressSummaryData>(`/api/progress/summary?term=${encodeURIComponent(term)}`),
+  terms: (options?: CacheOptions) => request<TermsData>(withRefresh('/api/terms', options)),
+  schedule: (term: string, options?: CacheOptions) =>
+    request<ScheduleData>(withRefresh(`/api/schedule?term=${encodeURIComponent(term)}`, options)),
+  feature: (feature: ModuleKey, term: string, options?: CacheOptions) =>
+    request<unknown>(withRefresh(`/api/${feature}?term=${encodeURIComponent(term)}`, options)),
+  progressSummary: (term: string, options?: CacheOptions) =>
+    request<ProgressSummaryData>(withRefresh(`/api/progress/summary?term=${encodeURIComponent(term)}`, options)),
   progressExportUrl: (term: string, className: string, kcdm = '', skbjdm = '') =>
     `/api/progress/export?term=${encodeURIComponent(term)}&class=${encodeURIComponent(className)}&kcdm=${encodeURIComponent(kcdm)}&skbjdm=${encodeURIComponent(skbjdm)}`,
   progressPdfUrl: (term: string, params: Record<string, string>) =>
     `/api/progress/export/pdf?term=${encodeURIComponent(term)}&${new URLSearchParams(params).toString()}`,
-  rosterClasses: (term: string) => request<RosterClassListData>(`/api/roster/classes?term=${encodeURIComponent(term)}`),
-  roster: (term: string, kcdm: string, skbjdm: string) =>
+  rosterClasses: (term: string, options?: CacheOptions) =>
+    request<RosterClassListData>(withRefresh(`/api/roster/classes?term=${encodeURIComponent(term)}`, options)),
+  roster: (term: string, kcdm: string, skbjdm: string, options?: CacheOptions) =>
     request<RosterData>(
-      `/api/roster?term=${encodeURIComponent(term)}&kcdm=${encodeURIComponent(kcdm)}&skbjdm=${encodeURIComponent(skbjdm)}`,
+      withRefresh(`/api/roster?term=${encodeURIComponent(term)}&kcdm=${encodeURIComponent(kcdm)}&skbjdm=${encodeURIComponent(skbjdm)}`, options),
     ),
   rosterExportUrl: (term: string, kcdm: string, skbjdm: string) =>
     `/api/roster/export?term=${encodeURIComponent(term)}&kcdm=${encodeURIComponent(kcdm)}&skbjdm=${encodeURIComponent(skbjdm)}`,
@@ -85,7 +103,8 @@ export const api = {
     `/api/roster/report?term=${encodeURIComponent(term)}&kcdm=${encodeURIComponent(kcdm)}&skbjdm=${encodeURIComponent(skbjdm)}`,
   rosterPrintUrl: (term: string, kcdm: string, skbjdm: string) =>
     `/api/roster/report?term=${encodeURIComponent(term)}&kcdm=${encodeURIComponent(kcdm)}&skbjdm=${encodeURIComponent(skbjdm)}&format=print`,
-  progressClasses: (term: string) => request<ProgressClassesData>(`/api/progress/classes?term=${encodeURIComponent(term)}`),
+  progressClasses: (term: string, options?: CacheOptions) =>
+    request<ProgressClassesData>(withRefresh(`/api/progress/classes?term=${encodeURIComponent(term)}`, options)),
   progressEntry: (term: string, params: Record<string, string>) =>
     request<ProgressEntryData>(`/api/progress/entry?term=${encodeURIComponent(term)}&${new URLSearchParams(params).toString()}`),
   progressSave: (body: unknown) =>
@@ -94,23 +113,23 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
-  progressCopyTerms: (term: string, kcdm: string, skbjdm: string) =>
+  progressCopyTerms: (term: string, kcdm: string, skbjdm: string, options?: CacheOptions) =>
     request<ProgressCopyOptionsData>(
-      `/api/progress/copy-terms?term=${encodeURIComponent(term)}&kcdm=${encodeURIComponent(kcdm)}&skbjdm=${encodeURIComponent(skbjdm)}`,
+      withRefresh(`/api/progress/copy-terms?term=${encodeURIComponent(term)}&kcdm=${encodeURIComponent(kcdm)}&skbjdm=${encodeURIComponent(skbjdm)}`, options),
     ),
-  progressCopyClasses: (term: string, kcdm: string, skbjdm: string, xnxq: string) =>
+  progressCopyClasses: (term: string, kcdm: string, skbjdm: string, xnxq: string, options?: CacheOptions) =>
     request<ProgressCopyOptionsData>(
-      `/api/progress/copy-classes?term=${encodeURIComponent(term)}&kcdm=${encodeURIComponent(kcdm)}&skbjdm=${encodeURIComponent(skbjdm)}&xnxq=${encodeURIComponent(xnxq)}`,
+      withRefresh(`/api/progress/copy-classes?term=${encodeURIComponent(term)}&kcdm=${encodeURIComponent(kcdm)}&skbjdm=${encodeURIComponent(skbjdm)}&xnxq=${encodeURIComponent(xnxq)}`, options),
     ),
   progressCopy: (kcdm: string, xnxq: string, source: string) =>
     request<ProgressCopyData>(
       `/api/progress/copy?kcdm=${encodeURIComponent(kcdm)}&xnxq=${encodeURIComponent(xnxq)}&source=${encodeURIComponent(source)}`,
     ),
-  courseGradeClasses: (term: string) =>
-    request<CourseGradeClassesData>(`/api/course-grades/classes?term=${encodeURIComponent(term)}`),
-  courseGrades: (term: string, params: Record<string, string>) =>
+  courseGradeClasses: (term: string, options?: CacheOptions) =>
+    request<CourseGradeClassesData>(withRefresh(`/api/course-grades/classes?term=${encodeURIComponent(term)}`, options)),
+  courseGrades: (term: string, params: Record<string, string>, options?: CacheOptions) =>
     request<CourseGradesData>(
-      `/api/course-grades?term=${encodeURIComponent(term)}&${new URLSearchParams(params).toString()}`,
+      withRefresh(`/api/course-grades?term=${encodeURIComponent(term)}&${new URLSearchParams(params).toString()}`, options),
     ),
   courseGradesPdfUrl: (term: string, params: Record<string, string>) =>
     `/api/course-grades/export/pdf?term=${encodeURIComponent(term)}&${new URLSearchParams(params).toString()}`,

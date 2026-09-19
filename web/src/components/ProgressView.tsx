@@ -35,7 +35,7 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
     setError('');
     setFailures([]);
     api
-      .progressSummary(term)
+      .progressSummary(term, { refresh: attempt > 0 })
       .then((data) => {
         if (cancelled) return;
         setGroups(data.items ?? []);

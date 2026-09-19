@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { api, readApiCache, errorMessage, isUnauthorized, isUnimplemented } from '../api';
 import { downloadFile } from '../lib/download';
+import { ExportButton } from './ExportButton';
 import { Award, ClipboardList, TrendingUp } from './Icons';
 import { EmptyState, ErrorState, LoadingState, PendingState } from './StateViews';
 import { ProgressEntry } from './ProgressEntry';
@@ -260,20 +261,16 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
                     <strong>{item.courseName}</strong>
                     <span>{item.className}</span>
                   </div>
-                  <button
+                  <ExportButton
                     className="kbtn primary"
-                    type="button"
-                    onClick={() => void download(api.rosterPdfUrl(term, item.kcdm, item.skbjdm), `点名册-${item.skbjdm}.pdf`)}
-                  >
-                    导出点名册 PDF
-                  </button>
-                  <button
+                    label="导出点名册 PDF"
+                    onExport={() => download(api.rosterPdfUrl(term, item.kcdm, item.skbjdm), `点名册-${item.skbjdm}.pdf`)}
+                  />
+                  <ExportButton
                     className="kbtn ghost"
-                    type="button"
-                    onClick={() => void download(api.rosterExportUrl(term, item.kcdm, item.skbjdm), `点名册-${item.skbjdm}.csv`)}
-                  >
-                    CSV
-                  </button>
+                    label="CSV"
+                    onExport={() => download(api.rosterExportUrl(term, item.kcdm, item.skbjdm), `点名册-${item.skbjdm}.csv`)}
+                  />
                 </div>
               ))}
             </div>

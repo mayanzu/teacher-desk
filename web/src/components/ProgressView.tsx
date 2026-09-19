@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, readApiCache, errorMessage, isUnauthorized } from '../api';
 import { downloadFile } from '../lib/download';
+import { ExportButton } from './ExportButton';
 import type { ProgressSummaryData, ProgressSummaryFailure, ProgressSummaryGroup } from '../types';
 import { EmptyState, ErrorState, LoadingState } from './StateViews';
 
@@ -76,13 +77,11 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
           <p className="sub">按上课班级分组，点击展开每周授课内容</p>
         </div>
         <div className="week-nav">
-          <button
+          <ExportButton
             className="kbtn primary"
-            type="button"
-            onClick={() => void download(api.progressPdfUrl(term, { scope: 'term' }), '学期教学进度表.pdf')}
-          >
-            导出 PDF
-          </button>
+            label="导出 PDF"
+            onExport={() => download(api.progressPdfUrl(term, { scope: 'term' }), '学期教学进度表.pdf')}
+          />
           <button className="kbtn ghost" type="button" onClick={() => setAttempt((v) => v + 1)}>
             刷新
           </button>
@@ -129,11 +128,11 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
                       <button className="kbtn ghost grade-view" type="button" onClick={() => setExpanded(open ? null : group.skbjdm || group.className)}>
                         {open ? '收起' : '展开'}
                       </button>
-                      <button
+                      <ExportButton
                         className="kbtn primary grade-view"
-                        type="button"
-                        onClick={() =>
-                          void download(
+                        label="导出 PDF"
+                        onExport={() =>
+                          download(
                             api.progressPdfUrl(term, {
                               kcdm: group.kcdm,
                               bjdm: group.bjdm || group.skbjdm,
@@ -151,9 +150,7 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
                             ].filter(Boolean).join('_')}.pdf`,
                           )
                         }
-                      >
-                        导出 PDF
-                      </button>
+                      />
                     </div>
                   </header>
                   <div className="pv-bar" role="presentation">

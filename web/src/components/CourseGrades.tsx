@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, readApiCache, errorMessage, isUnauthorized } from '../api';
 import { downloadFile } from '../lib/download';
+import { ExportButton } from './ExportButton';
 import { EmptyState, ErrorState, LoadingState } from './StateViews';
 import type { CourseGradeClassesData, CourseGradeClass, CourseGradesData } from '../types';
 
@@ -227,13 +228,11 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
                           >
                             {open ? '收起' : '查看原始成绩'}
                           </button>
-                          <button
+                          <ExportButton
                             className="kbtn primary grade-view"
-                            type="button"
-                            onClick={() => void download(pdfUrl(item), `${item.courseName}_${item.className}_原始成绩.pdf`)}
-                          >
-                            导出 PDF
-                          </button>
+                            label="导出 PDF"
+                            onExport={() => download(pdfUrl(item), `${item.courseName}_${item.className}_原始成绩.pdf`)}
+                          />
                         </div>
                       </div>
 

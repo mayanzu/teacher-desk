@@ -16,16 +16,16 @@ const HOUR = 60 * MINUTE;
 export const DEFAULT_CACHE_TTL_MS =
   Number(process.env.JWXT_CACHE_TTL_MS) > 0 ? Number(process.env.JWXT_CACHE_TTL_MS) : 5 * MINUTE;
 
-/** 变化越慢的数据，TTL 越长；顺序敏感，先匹配先返回 */
+/** 变化越慢的数据，TTL 越长；顺序敏感，先匹配先返回。模式带 `:` 是为了只匹配真实键，不做前缀误伤 */
 const TTL_TIERS = [
   // 学期列表：一学期都不会变
   [/^terms$/, 12 * HOUR],
   // 课表 / 教学任务：偶有调课，半小时足够
   [/^(schedule|tasks):/, 30 * MINUTE],
   // 成绩：录入后基本不动
-  [/^(grades|courseGradeClasses|courseGrades)/, 30 * MINUTE],
-  // 点名册 / 教学班名单：学生名单偶尔调整
-  [/^(roster|rosterClasses)/, 10 * MINUTE],
+  [/^(grades|courseGradeClasses|courseGrades):/, 30 * MINUTE],
+  // 点名册 / 教学班名单：学生名单偶尔调整（注意 /api/roster/classes 复用进度页的 progressClasses 键，走 5 分钟档）
+  [/^roster:/, 10 * MINUTE],
 ];
 
 export function cacheTtlFor(key, fallback = DEFAULT_CACHE_TTL_MS) {

@@ -29,9 +29,10 @@ const run = (cmd) => {
 run('npm run build');
 if (!existsSync(join(distDir, 'index.html'))) throw new Error('web/dist 构建失败');
 
-// 2) 打包服务端为单文件 CJS
+// 2) 打包服务端为单文件 CJS（tools/bundle-server.mjs：处理 pdfkit 的包内 imports 与 ICC 顶层 URL，
+//    裸 esbuild 打出来的产物会启动即崩）
 mkdirSync(exeDir, { recursive: true });
-run(`npx --yes esbuild tools/exe/main.cjs --bundle --platform=node --format=cjs --target=node22 --outfile="${bundlePath}"`);
+run(`node tools/bundle-server.mjs "${bundlePath}" tools/exe/main.cjs`);
 
 // 3) 收集 web/dist 作为内嵌资源
 const assets = {};

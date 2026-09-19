@@ -41,10 +41,10 @@ const run = (cmd) => {
 run('npm run build');
 if (!existsSync(join(distDir, 'index.html'))) throw new Error('web/dist 构建失败');
 
-// 2) 清空输出目录并打包后端为单文件
+// 2) 清空输出目录并打包后端为单文件（走 tools/bundle-server.mjs，见该文件里 pdfkit 的打包说明）
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
-run(`npx --yes esbuild tools/exe/main.cjs --bundle --platform=node --format=cjs --target=node22 --outfile="${bundlePath}"`);
+run(`node tools/bundle-server.mjs "${bundlePath}" tools/exe/main.cjs`);
 
 // 3) 拷贝官方 node.exe + 前端资源
 copyFileSync(process.execPath, join(outDir, 'node.exe'));

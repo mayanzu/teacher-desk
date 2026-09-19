@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, errorMessage, isUnauthorized } from '../api';
+import { api, readApiCache, errorMessage, isUnauthorized } from '../api';
 import { downloadFile } from '../lib/download';
-import type { ProgressSummaryFailure, ProgressSummaryGroup } from '../types';
+import type { ProgressSummaryData, ProgressSummaryFailure, ProgressSummaryGroup } from '../types';
 import { EmptyState, ErrorState, LoadingState } from './StateViews';
 
 interface ProgressViewProps {
@@ -10,9 +10,10 @@ interface ProgressViewProps {
 }
 
 export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
-  const [groups, setGroups] = useState<ProgressSummaryGroup[]>([]);
-  const [failures, setFailures] = useState<ProgressSummaryFailure[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cached = readApiCache<ProgressSummaryData>('progress/summary', term);
+  const [groups, setGroups] = useState<ProgressSummaryGroup[]>(cached?.items ?? []);
+  const [failures, setFailures] = useState<ProgressSummaryFailure[]>(cached?.failures ?? []);
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -31,9 +32,11 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    const snapshot = readApiCache<ProgressSummaryData>('progress/summary', term);
+    setLoading(!snapshot);
+    setGroups(snapshot?.items ?? []);
     setError('');
-    setFailures([]);
+    setFailures(snapshot?.failures ?? []);
     api
       .progressSummary(term, { refresh: attempt > 0 })
       .then((data) => {

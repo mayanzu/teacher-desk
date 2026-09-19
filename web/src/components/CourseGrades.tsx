@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, errorMessage, isUnauthorized } from '../api';
+import { api, readApiCache, errorMessage, isUnauthorized } from '../api';
 import { downloadFile } from '../lib/download';
 import { EmptyState, ErrorState, LoadingState } from './StateViews';
-import type { CourseGradeClass, CourseGradesData } from '../types';
+import type { CourseGradeClassesData, CourseGradeClass, CourseGradesData } from '../types';
 
 interface CourseGradesProps {
   term: string;
@@ -20,8 +20,9 @@ interface CourseGroup {
 }
 
 export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
-  const [classes, setClasses] = useState<CourseGradeClass[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cached = readApiCache<CourseGradeClassesData>('course-grades/classes', term);
+  const [classes, setClasses] = useState<CourseGradeClass[]>(cached?.items ?? []);
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [report, setReport] = useState<CourseGradesData | null>(null);
@@ -32,9 +33,10 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    const snapshot = readApiCache<CourseGradeClassesData>('course-grades/classes', term);
+    setLoading(!snapshot);
     setError('');
-    setClasses([]);
+    setClasses(snapshot?.items ?? []);
     setExpanded(null);
     setReport(null);
     api
@@ -93,9 +95,13 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
       return;
     }
     let cancelled = false;
-    setReportLoading(true);
+    const snapshot = readApiCache<CourseGradesData>('course-grades', term, {
+      kcdm: expandedItem.kcdm, bjdm: expandedItem.bjdm, bjmc: expandedItem.className,
+      flag: '1', dyfs: 'dl', qmzhC: 'zhC',
+    });
+    setReportLoading(!snapshot);
     setReportError('');
-    setReport(null);
+    setReport(snapshot ?? null);
     api
       .courseGrades(
         term,
@@ -107,7 +113,7 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
           dyfs: 'dl',
           qmzhC: 'zhC',
         },
-        { refresh: attempt > 0 },
+        {},
       )
       .then((data) => {
         if (!cancelled) setReport(data);

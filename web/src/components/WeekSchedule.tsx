@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import { api, errorMessage, isUnauthorized } from '../api';
+import { api, readApiCache, errorMessage, isUnauthorized } from '../api';
 import { CalendarDays, ChevronLeft, ChevronRight, MapPin, Users } from './Icons';
 import { CourseDialog } from './CourseDialog';
 import { HeroSection } from './HeroSection';
@@ -84,18 +84,22 @@ const LessonCard = memo(function LessonCard({ course, start, end, phase, extraCo
 });
 
 export function WeekSchedule({ term, userId, onUnauthorized }: WeekScheduleProps) {
-  const [data, setData] = useState<ScheduleData | null>(null);
-  const [loadedTerm, setLoadedTerm] = useState('');
-  const [loading, setLoading] = useState(true);
+  const cached = readApiCache<ScheduleData>('schedule', term);
+  const [data, setData] = useState<ScheduleData | null>(cached ?? null);
+  const [loadedTerm, setLoadedTerm] = useState(cached ? term : '');
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
-  const [viewWeek, setViewWeek] = useState(1);
+  const [viewWeek, setViewWeek] = useState(() => currentWeekFrom(parseSemesterStart(cached?.semesterStart) ?? termStart(term), cached?.totalWeeks || cached?.maxWeek || 20) ?? 1);
   const [selected, setSelected] = useState<Course[] | null>(null);
   const now = useNow(30000);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    const snapshot = readApiCache<ScheduleData>('schedule', term);
+    setLoading(!snapshot);
+    setData(snapshot ?? null);
+    setLoadedTerm(snapshot ? term : '');
     setError('');
     setSelected(null);
     api

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { api, errorMessage, isUnauthorized, isUnimplemented } from '../api';
+import { api, readApiCache, errorMessage, isUnauthorized, isUnimplemented } from '../api';
 import { downloadFile } from '../lib/download';
 import { Award, ClipboardList, TrendingUp } from './Icons';
 import { EmptyState, ErrorState, LoadingState, PendingState } from './StateViews';
@@ -83,14 +83,15 @@ interface GenericProps {
 
 function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
   const config = MODULES[module];
-  const [loading, setLoading] = useState(true);
+  const cached = readApiCache<FeaturePayload>(module, term);
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   const [pendingMessage, setPendingMessage] = useState('');
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [note, setNote] = useState('');
+  const [rows, setRows] = useState<Record<string, unknown>[]>((cached?.items ?? []) as Record<string, unknown>[]);
+  const [note, setNote] = useState(cached?.note ?? '');
   const [attempt, setAttempt] = useState(0);
-  const [rosterClasses, setRosterClasses] = useState<RosterClass[]>([]);
+  const [rosterClasses, setRosterClasses] = useState<RosterClass[]>(readApiCache<{ items: RosterClass[] }>('roster/classes', term)?.items ?? []);
   const [downloadError, setDownloadError] = useState('');
 
   const download = async (url: string, name: string) => {
@@ -104,12 +105,13 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    const snapshot = readApiCache<FeaturePayload>(module, term);
+    setLoading(!snapshot);
     setError('');
     setPending(false);
     setPendingMessage('');
-    setRows([]);
-    setNote('');
+    setRows((snapshot?.items ?? []) as Record<string, unknown>[]);
+    setNote(snapshot?.note ?? '');
     api
       .feature(module, term, { refresh: attempt > 0 })
       .then((payload) => {
@@ -142,7 +144,7 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
   useEffect(() => {
     if (module !== 'tasks') return;
     let cancelled = false;
-    setRosterClasses([]);
+    setRosterClasses(readApiCache<{ items: RosterClass[] }>('roster/classes', term)?.items ?? []);
     api
       .rosterClasses(term, { refresh: attempt > 0 })
       .then((data) => {

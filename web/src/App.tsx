@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, errorMessage, isUnauthorized } from './api';
+import { api, clearApiCache, preloadTerm, errorMessage, isUnauthorized } from './api';
 import { AppHeader } from './components/AppHeader';
 import { GitHubIcon } from './components/Icons';
 import { LoginPage } from './components/LoginPage';
@@ -25,6 +25,7 @@ export default function App() {
   const [progressDirty, setProgressDirty] = useState(false);
 
   const resetSessionState = useCallback(() => {
+    clearApiCache();
     setSession({ loggedIn: false, username: '' });
     setTerms([]);
     setTerm('');
@@ -60,7 +61,7 @@ export default function App() {
       void (async () => {
         try {
           const current = await api.session();
-          if (!cancelled && !current.loggedIn) resetSessionState();
+          if (!cancelled && (!current.loggedIn || current.username !== session.username)) resetSessionState();
         } catch {
           /* 网络抖动忽略，等下次心跳 */
         }
@@ -70,7 +71,7 @@ export default function App() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [session.loggedIn, resetSessionState]);
+  }, [session.loggedIn, session.username, resetSessionState]);
 
   useEffect(() => {
     if (!session.loggedIn) return;
@@ -103,7 +104,13 @@ export default function App() {
     };
   }, [session.loggedIn, termsAttempt, resetSessionState]);
 
+  useEffect(() => {
+    if (!session.loggedIn || !term) return;
+    return preloadTerm(term, resetSessionState);
+  }, [session.loggedIn, term, resetSessionState]);
+
   const handleLoggedIn = useCallback(async () => {
+    clearApiCache();
     try {
       const current = await api.session();
       setSession(current);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, errorMessage, isUnauthorized } from '../api';
-import type { ProgressClass, ProgressCopyOption, ProgressEntryRow, ProgressTotals } from '../types';
+import { api, readApiCache, errorMessage, isUnauthorized } from '../api';
+import type { ProgressClassesData, ProgressClass, ProgressCopyOption, ProgressEntryRow, ProgressTotals } from '../types';
 import { EmptyState, ErrorState, LoadingState } from './StateViews';
 
 import { applyTotals, sumHours, validateHours } from '../lib/progress';
@@ -12,12 +12,13 @@ interface ProgressEntryProps {
 }
 
 export function ProgressEntry({ term, onUnauthorized, onDirtyChange }: ProgressEntryProps) {
+  const cached = readApiCache<ProgressClassesData>('progress/classes', term);
   const requestId = useRef(0);
   const copyId = useRef(0);
   const loadedId = useRef(-1);
-  const [listLoading, setListLoading] = useState(true);
+  const [listLoading, setListLoading] = useState(!cached);
   const [listAttempt, setListAttempt] = useState(0);
-  const [classes, setClasses] = useState<ProgressClass[]>([]);
+  const [classes, setClasses] = useState<ProgressClass[]>(cached?.items ?? []);
   const [selected, setSelected] = useState<ProgressClass | null>(null);
   const [rows, setRows] = useState<ProgressEntryRow[]>([]);
   const [meta, setMeta] = useState<Record<string, string>>({});
@@ -69,8 +70,9 @@ export function ProgressEntry({ term, onUnauthorized, onDirtyChange }: ProgressE
 
   useEffect(() => {
     let cancelled = false;
-    setListLoading(true);
-    setClasses([]);
+    const snapshot = readApiCache<ProgressClassesData>('progress/classes', term);
+    setListLoading(!snapshot);
+    setClasses(snapshot?.items ?? []);
     setSelected(null);
     setRows([]);
     setCopyOpen(false);

@@ -172,7 +172,7 @@ async function componentModule(file) {
       b.onResolve({ filter: /^react(?:\/jsx-runtime)?$/ }, (args) => ({ path: args.path, namespace: 'review' }));
       b.onResolve({ filter: /(?:^|\/)api$/ }, () => ({ path: 'api', namespace: 'review' }));
       b.onLoad({ filter: /.*/, namespace: 'review' }, ({ path }) => ({ contents: path === 'api'
-        ? `export class ApiError extends Error { constructor(message, status) { super(message); this.name = 'ApiError'; this.status = status; } } export const api = new Proxy({}, {get: (_, key) => (...args) => globalThis.__reviewApi[key](...args)}); export const isUnauthorized = e => e.status === 401; export const errorMessage = e => e.message; export const isUnimplemented = e => e.status === 501;`
+        ? `export const clearApiCache = () => {}; export const preloadTerm = () => () => {}; export const readApiCache = (...args) => globalThis.__reviewCache?.(...args); export class ApiError extends Error { constructor(message, status) { super(message); this.name = 'ApiError'; this.status = status; } } export const api = new Proxy({}, {get: (_, key) => (...args) => globalThis.__reviewApi[key](...args)}); export const isUnauthorized = e => e.status === 401; export const errorMessage = e => e.message; export const isUnimplemented = e => e.status === 501;`
         : path === 'react/jsx-runtime'
         ? `export const Fragment = 'fragment'; export const jsx = (type, props) => ({type, props}); export const jsxs = jsx;`
         : `export const memo = fn => fn; export const useState = v => globalThis.__reviewHooks.state(v); export const useRef = v => globalThis.__reviewHooks.ref(v); export const useEffect = (fn, deps) => globalThis.__reviewHooks.effect(fn,deps); export const useCallback = (fn,deps) => globalThis.__reviewHooks.memo(fn,deps); export const useMemo = (fn,deps) => globalThis.__reviewHooks.memoValue(fn,deps);` }));
@@ -485,4 +485,33 @@ test('tearing a memo persists immediately even if the panel unmounts', async () 
     globalThis.localStorage = oldStorage;
     globalThis.window = oldWindow;
   }
+});
+
+
+test('cached tabs render data on their first frame without a loading spinner', async () => {
+  const oldCache = globalThis.__reviewCache;
+  const oldApi = globalThis.__reviewApi;
+  globalThis.__reviewApi = new Proxy({}, { get: () => async () => ({ items: [] }) });
+  globalThis.__reviewCache = () => ({ items: [], failures: [] });
+  try {
+    for (const [file, name, props] of [
+      ['web/src/components/ModulePage.tsx', 'ModulePage', { module: 'tasks' }],
+      ['web/src/components/CourseGrades.tsx', 'CourseGrades', {}],
+      ['web/src/components/ProgressView.tsx', 'ProgressView', {}],
+      ['web/src/components/ProgressEntry.tsx', 'ProgressEntry', {}],
+    ]) {
+      const mod = await componentModule(file);
+      const view = harness(mod[name], { term: '2026,0', onUnauthorized() {}, ...props });
+      let tree = view.render();
+      let child;
+      if (name === 'ModulePage') {
+        child = harness(tree.type, tree.props);
+        tree = child.render();
+      }
+      assert.equal(nodes(tree, n => typeof n.type === 'function' && n.type.name === 'LoadingState').length, 0, name);
+      child?.unmount();
+      view.unmount();
+      await tick();
+    }
+  } finally { globalThis.__reviewCache = oldCache; globalThis.__reviewApi = oldApi; }
 });

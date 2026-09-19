@@ -1,3 +1,4 @@
+import { query, clearQueryCache, peekQuery, cacheGeneration, invalidateQueries } from './lib/queryCache';
 import type {
   CourseGradeClassesData,
   CourseGradesData,
@@ -27,7 +28,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function networkRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
   try {
     response = await fetch(path, {
@@ -60,6 +61,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return payload as T;
 }
 
+export const clearApiCache = clearQueryCache;
+export function readApiCache<T>(endpoint: string, term: string, params: Record<string, string> = {}): T | undefined {
+  return peekQuery<T>(`/api/${endpoint}?${new URLSearchParams({ term, ...params })}`);
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const cacheable = (!init.method || init.method === 'GET') &&
+    !/^\/api\/(health|session|login)(?:[/?]|$)/.test(path);
+  return cacheable ? query(path, () => networkRequest<T>(path, init)) : networkRequest<T>(path, init);
+}
+
 /**
  * 「刷新」按钮传 refresh=true：请求带 `?refresh=1`，让服务端跳过缓存直接回源。
  *
@@ -77,9 +89,9 @@ function withRefresh(path: string, options: CacheOptions = {}): string {
 export const api = {
   health: () => request<{ ok: boolean }>('/api/health'),
   session: () => request<SessionData>('/api/session'),
-  loginStart: () => request<LoginStart>('/api/login/start', { method: 'POST' }),
+  loginStart: () => { clearApiCache(); return request<LoginStart>('/api/login/start', { method: 'POST' }); },
   loginStatus: () => request<LoginState>('/api/login/status'),
-  logout: () => request<{ ok: boolean }>('/api/logout', { method: 'POST', signal: AbortSignal.timeout(5000) }),
+  logout: () => { clearApiCache(); return request<{ ok: boolean }>('/api/logout', { method: 'POST', signal: AbortSignal.timeout(5000) }); },
   terms: (options?: CacheOptions) => request<TermsData>(withRefresh('/api/terms', options)),
   schedule: (term: string, options?: CacheOptions) =>
     request<ScheduleData>(withRefresh(`/api/schedule?term=${encodeURIComponent(term)}`, options)),
@@ -107,12 +119,16 @@ export const api = {
     request<ProgressClassesData>(withRefresh(`/api/progress/classes?term=${encodeURIComponent(term)}`, options)),
   progressEntry: (term: string, params: Record<string, string>) =>
     request<ProgressEntryData>(`/api/progress/entry?term=${encodeURIComponent(term)}&${new URLSearchParams(params).toString()}`),
-  progressSave: (body: unknown) =>
-    request<ProgressSaveResult>('/api/progress/entry', {
+  progressSave: async (body: unknown) => {
+    const epoch = cacheGeneration();
+    const result = await request<ProgressSaveResult>('/api/progress/entry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    }),
+    });
+    if (epoch === cacheGeneration() && String((result.data as { status?: unknown } | null)?.status) === '200') clearApiCache();
+    return result;
+  },
   progressCopyTerms: (term: string, kcdm: string, skbjdm: string, options?: CacheOptions) =>
     request<ProgressCopyOptionsData>(
       withRefresh(`/api/progress/copy-terms?term=${encodeURIComponent(term)}&kcdm=${encodeURIComponent(kcdm)}&skbjdm=${encodeURIComponent(skbjdm)}`, options),
@@ -125,8 +141,10 @@ export const api = {
     request<ProgressCopyData>(
       `/api/progress/copy?kcdm=${encodeURIComponent(kcdm)}&xnxq=${encodeURIComponent(xnxq)}&source=${encodeURIComponent(source)}`,
     ),
-  courseGradeClasses: (term: string, options?: CacheOptions) =>
-    request<CourseGradeClassesData>(withRefresh(`/api/course-grades/classes?term=${encodeURIComponent(term)}`, options)),
+  courseGradeClasses: (term: string, options?: CacheOptions) => {
+    if (options?.refresh) invalidateQueries('/api/course-grades?');
+    return request<CourseGradeClassesData>(withRefresh(`/api/course-grades/classes?term=${encodeURIComponent(term)}`, options));
+  },
   courseGrades: (term: string, params: Record<string, string>, options?: CacheOptions) =>
     request<CourseGradesData>(
       withRefresh(`/api/course-grades?term=${encodeURIComponent(term)}&${new URLSearchParams(params).toString()}`, options),
@@ -148,4 +166,30 @@ export function isUnauthorized(error: unknown): boolean {
 
 export function isUnimplemented(error: unknown): boolean {
   return error instanceof ApiError && error.status === 501;
+}
+
+// Two background workers; visible queries share their in-flight requests.
+export function preloadTerm(term: string, onUnauthorized: () => void): () => void {
+  let stopped = false;
+  const epoch = cacheGeneration();
+  const jobs = [
+    () => api.schedule(term),
+    () => api.feature('tasks', term),
+    () => api.progressClasses(term),
+    () => api.courseGradeClasses(term),
+    () => api.rosterClasses(term),
+    () => api.progressSummary(term),
+  ];
+  let cursor = 0;
+  const run = async () => {
+    while (!stopped && epoch === cacheGeneration() && cursor < jobs.length) {
+      const load = jobs[cursor++];
+      try { await load(); }
+      catch (error) {
+        if (isUnauthorized(error) && !stopped && epoch === cacheGeneration()) { stopped = true; onUnauthorized(); }
+      }
+    }
+  };
+  void Promise.all([run(), run()]);
+  return () => { stopped = true; };
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, readApiCache, errorMessage, isUnauthorized } from '../api';
-import { downloadFile } from '../lib/download';
+import { downloadFile, type DownloadPhase } from '../lib/download';
+import { useRefreshRequest, useRefreshConsumer } from '../lib/useRefreshRequest';
 import { ExportButton } from './ExportButton';
 import type { ProgressSummaryData, ProgressSummaryFailure, ProgressSummaryGroup } from '../types';
 import { EmptyState, ErrorState, LoadingState } from './StateViews';
@@ -16,8 +17,10 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
   const [failures, setFailures] = useState<ProgressSummaryFailure[]>(cached?.failures ?? []);
   const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
+  const { token: refreshToken, requestRefresh } = useRefreshRequest(`progress:${term}`);
+  const { forceFor } = useRefreshConsumer();
   const [downloadError, setDownloadError] = useState('');
 
   const handleError = useCallback(
@@ -33,20 +36,32 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
 
   useEffect(() => {
     let cancelled = false;
+    const force = forceFor(refreshToken);
     const snapshot = readApiCache<ProgressSummaryData>('progress/summary', term);
     setLoading(!snapshot);
-    setGroups(snapshot?.items ?? []);
+    // 有缓存快照才覆盖；刷新失败时保留已显示的汇总（review R06）
+    if (snapshot) {
+      setGroups(snapshot.items ?? []);
+      setFailures(snapshot.failures ?? []);
+    }
     setError('');
-    setFailures(snapshot?.failures ?? []);
+    setWarning('');
     api
-      .progressSummary(term, { refresh: attempt > 0 })
+      .progressSummary(term, { refresh: force })
       .then((data) => {
         if (cancelled) return;
         setGroups(data.items ?? []);
         setFailures(data.failures ?? []);
       })
       .catch((err: unknown) => {
-        if (!cancelled) handleError(err);
+        if (cancelled) return;
+        if (isUnauthorized(err)) {
+          onUnauthorized();
+          return;
+        }
+        // 已有汇总时保留内容并提示（review R06）
+        if (snapshot || groups.length) setWarning(`刷新失败（${errorMessage(err)}），正在显示上一次汇总的数据。`);
+        else handleError(err);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -54,12 +69,12 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [term, attempt, handleError]);
+  }, [term, refreshToken, handleError, onUnauthorized, forceFor]);
 
-  const download = async (url: string, name: string) => {
+  const download = async (url: string, name: string, onPhase?: (phase: DownloadPhase) => void) => {
     setDownloadError('');
     try {
-      await downloadFile(url, name);
+      await downloadFile(url, name, { onPhase });
     } catch (err) {
       if (isUnauthorized(err)) {
         onUnauthorized();
@@ -80,22 +95,32 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
           <ExportButton
             className="kbtn primary"
             label="导出 PDF"
-            onExport={() => download(api.progressPdfUrl(term, { scope: 'term' }), '学期教学进度表.pdf')}
+            pendingLabel="正在生成 PDF…"
+            onExport={(report) => download(api.progressPdfUrl(term, { scope: 'term' }), '学期教学进度表.pdf', report)}
           />
-          <button className="kbtn ghost" type="button" onClick={() => setAttempt((v) => v + 1)}>
+          <button className="kbtn ghost" type="button" onClick={requestRefresh}>
             刷新
           </button>
         </div>
       </div>
 
       <div className="panel-card">
+        {warning && (
+          <p className="notice-bar is-warn" role="status">
+            <b>注意</b>
+            {warning}
+            <button className="kbtn ghost" type="button" onClick={requestRefresh}>
+              重试
+            </button>
+          </p>
+        )}
         {downloadError && (
           <p className="notice-bar is-warn" role="alert">
             {downloadError}
           </p>
         )}
         {loading && <LoadingState message="正在汇总教学进度…" />}
-        {!loading && error && <ErrorState title="加载失败" message={error} onRetry={() => setAttempt((v) => v + 1)} />}
+        {!loading && error && <ErrorState title="加载失败" message={error} onRetry={requestRefresh} />}
         {!loading && !error && failures.length > 0 && (
           <p className="notice-bar is-warn" role="status">
             <b>部分教学班未能读取</b>
@@ -131,7 +156,8 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
                       <ExportButton
                         className="kbtn primary grade-view"
                         label="导出 PDF"
-                        onExport={() =>
+                        pendingLabel="正在生成 PDF…"
+                        onExport={(report) =>
                           download(
                             api.progressPdfUrl(term, {
                               kcdm: group.kcdm,
@@ -148,6 +174,7 @@ export function ProgressView({ term, onUnauthorized }: ProgressViewProps) {
                               (group.courseName || '').replace(/^\[[^\]]*\]\s*/, ''),
                               group.className,
                             ].filter(Boolean).join('_')}.pdf`,
+                            report,
                           )
                         }
                       />

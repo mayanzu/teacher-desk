@@ -1,4 +1,4 @@
-import { query, clearQueryCache, peekQuery, cacheGeneration, invalidateQueries } from './lib/queryCache';
+import { query, clearQueryCache, peekQuery, peekQueryEntry, cacheGeneration, invalidateQueries } from './lib/queryCache';
 import type {
   CourseGradeClassesData,
   CourseGradesData,
@@ -66,6 +66,11 @@ export function readApiCache<T>(endpoint: string, term: string, params: Record<s
   return peekQuery<T>(`/api/${endpoint}?${new URLSearchParams({ term, ...params })}`);
 }
 
+/** 读取缓存值及其写入时间，供「过期但可显示 + 显示更新时间」使用（review R06）。 */
+export function readApiCacheEntry<T>(endpoint: string, term: string, params: Record<string, string> = {}): { value: T; at: number } | undefined {
+  return peekQueryEntry<T>(`/api/${endpoint}?${new URLSearchParams({ term, ...params })}`);
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const cacheable = (!init.method || init.method === 'GET') &&
     !/^\/api\/(health|session|login)(?:[/?]|$)/.test(path);
@@ -95,6 +100,17 @@ export const api = {
   terms: (options?: CacheOptions) => request<TermsData>(withRefresh('/api/terms', options)),
   schedule: (term: string, options?: CacheOptions) =>
     request<ScheduleData>(withRefresh(`/api/schedule?term=${encodeURIComponent(term)}`, options)),
+  /**
+   * 分段课表（review R02）：不传 weeks 时服务端优先加载当前周 ±1；
+   * weeks 用于后台补齐或重试指定周次；prefetch=1 用低优先级，不抢用户正在看的请求。
+   */
+  schedulePartial: (term: string, options: { weeks?: number[]; prefetch?: boolean; refresh?: boolean } = {}) => {
+    const params = new URLSearchParams({ term });
+    if (options.weeks?.length) params.set('weeks', options.weeks.join(','));
+    if (options.prefetch) params.set('prefetch', '1');
+    if (options.refresh) params.set('refresh', '1');
+    return request<ScheduleData>(`/api/schedule/partial?${params.toString()}`);
+  },
   feature: (feature: ModuleKey, term: string, options?: CacheOptions) =>
     request<unknown>(withRefresh(`/api/${feature}?term=${encodeURIComponent(term)}`, options)),
   progressSummary: (term: string, options?: CacheOptions) =>
@@ -124,7 +140,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (epoch === cacheGeneration() && String((result.data as { status?: unknown } | null)?.status) === '200') clearApiCache();
+    // 定向失效：只清教学进度相关查询（汇总/明细/导出），课表、任务、成绩等无关缓存保留（review R05）。
+    // 教务明确返回失败时不清，避免把已显示的旧数据也弄丢。
+    const status = result?.data ? String(result.data.status ?? '') : '';
+    const failed = Boolean(result?.data) && Boolean(status) && status !== '200';
+    if (epoch === cacheGeneration() && !failed) invalidateQueries('/api/progress');
     return result;
   },
   progressCopyTerms: (term: string, kcdm: string, skbjdm: string, options?: CacheOptions) =>
@@ -167,11 +187,12 @@ export function isUnimplemented(error: unknown): boolean {
 }
 
 // Two background workers; visible queries share their in-flight requests.
+// 课表只预取当前周 ±1（review R02/R04），其余周次由课表页可见后再低优先级补齐。
 export function preloadTerm(term: string, onUnauthorized: () => void): () => void {
   let stopped = false;
   const epoch = cacheGeneration();
   const jobs = [
-    () => api.schedule(term),
+    () => api.schedulePartial(term),
     () => api.feature('tasks', term),
     () => api.progressClasses(term),
     () => api.courseGradeClasses(term),

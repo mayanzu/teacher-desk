@@ -1,0 +1,64 @@
+{
+  "measuredAt": "2026-09-19T14:01:46.196Z",
+  "synthetic": true,
+  "scenarios": [
+    {
+      "name": "normal metadata",
+      "trace": [
+        {
+          "stage": "upstream_generate_pdf",
+          "simulatedDelayMs": 200,
+          "startMs": 2,
+          "endMs": 207
+        },
+        {
+          "stage": "optional_filename_metadata",
+          "simulatedDelayMs": 300,
+          "startMs": 208,
+          "endMs": 508
+        },
+        {
+          "stage": "upstream_download_pdf",
+          "simulatedDelayMs": 100,
+          "startMs": 229,
+          "endMs": 334
+        }
+      ],
+      "functionReturnMs": 525,
+      "serialTotalMs": 600,
+      "metadataOverlapsDownload": true,
+      "metadataPendingAtReturn": false,
+      "generateStartedMs": 2,
+      "explanation": "metadata starts after PDF generation and runs in parallel with the download; a slow metadata page is capped by the filename budget instead of blocking the finished file."
+    },
+    {
+      "name": "30s metadata (budget caps the wait)",
+      "trace": [
+        {
+          "stage": "upstream_generate_pdf",
+          "simulatedDelayMs": 200,
+          "startMs": 526,
+          "endMs": 729
+        },
+        {
+          "stage": "optional_filename_metadata",
+          "simulatedDelayMs": 30000,
+          "startMs": 729,
+          "endMs": null
+        },
+        {
+          "stage": "upstream_download_pdf",
+          "simulatedDelayMs": 100,
+          "startMs": 729,
+          "endMs": 840
+        }
+      ],
+      "functionReturnMs": 1010,
+      "serialTotalMs": 30300,
+      "metadataOverlapsDownload": true,
+      "metadataPendingAtReturn": true,
+      "generateStartedMs": 526,
+      "explanation": "metadata starts after PDF generation and runs in parallel with the download; a slow metadata page is capped by the filename budget instead of blocking the finished file."
+    }
+  ]
+}

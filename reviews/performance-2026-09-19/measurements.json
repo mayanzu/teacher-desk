@@ -1,0 +1,90 @@
+{
+  "measuredAt": "2026-09-19T14:01:31.452Z",
+  "node": "v22.20.0",
+  "platform": "win32",
+  "arch": "x64",
+  "cpu": "AMD Ryzen 5 3600 6-Core Processor              ",
+  "simulatedLatencyMs": 20,
+  "scheduleWithConfiguredLimit1": {
+    "calls": 20,
+    "active": 0,
+    "peak": 1,
+    "paths": {
+      "/ahsljw/frame/desk/showLessonScheduleInfosV14.action": 20
+    },
+    "ms": 622.4
+  },
+  "threeSimultaneousSchedules": {
+    "calls": 60,
+    "active": 0,
+    "peak": 3,
+    "paths": {
+      "/ahsljw/frame/desk/showLessonScheduleInfosV14.action": 60
+    }
+  },
+  "normalProgressEntry": {
+    "calls": 3,
+    "active": 0,
+    "peak": 1,
+    "paths": {
+      "/ahsljw/wjstgdfw/jxap.lrjxjdb.edit10319.jsp": 1,
+      "/ahsljw/taglib/DataTable_utf8.jsp": 1,
+      "/ahsljw/jw/common/getXqskzs.action": 1
+    },
+    "rows": 1,
+    "ms": 95.49
+  },
+  "emptyProgressEntry": {
+    "calls": 7,
+    "active": 0,
+    "peak": 1,
+    "paths": {
+      "/ahsljw/wjstgdfw/jxap.lrjxjdb.edit10319.jsp": 1,
+      "/ahsljw/taglib/DataTable_utf8.jsp": 5,
+      "/ahsljw/jw/common/getXqskzs.action": 1
+    },
+    "rows": 0,
+    "ms": 222.47
+  },
+  "summaryThenEntry": {
+    "summaryCalls": 3,
+    "extraEntryCalls": 3,
+    "calls": 6,
+    "active": 0,
+    "peak": 1,
+    "paths": {
+      "/ahsljw/taglib/DataTable.jsp": 1,
+      "/ahsljw/wjstgdfw/jxap.lrjxjdb.edit10319.jsp": 2,
+      "/ahsljw/taglib/DataTable_utf8.jsp": 2,
+      "/ahsljw/jw/common/getXqskzs.action": 1
+    }
+  },
+  "browserFreshHitNetworkCalls": 0,
+  "unrelatedBrowserRequestsAfterSave": 0,
+  "downloadEncoding": [
+    {
+      "rawBytes": 1048576,
+      "jsonBytes": 1398176,
+      "gzipBytes": 1053104,
+      "encodeMedianMs": 2.83,
+      "gzipMedianMs": 34.92,
+      "decodeAndBlobMedianMs": 18.51
+    },
+    {
+      "rawBytes": 8388608,
+      "jsonBytes": 11184884,
+      "gzipBytes": 8424226,
+      "encodeMedianMs": 22.32,
+      "gzipMedianMs": 265.57,
+      "decodeAndBlobMedianMs": 54.02
+    }
+  ],
+  "warmupAfterContextRotation": {
+    "jobsStartedAfterRotation": {
+      "schedule": 0,
+      "tasks": 0,
+      "classes": 0
+    },
+    "aborted": true
+  }
+}

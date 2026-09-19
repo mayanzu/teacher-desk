@@ -13,7 +13,7 @@ const fixture = (name) => readFileSync(join(here, 'fixtures', name), 'utf8');
 const SID = 'b'.repeat(36);
 
 /** 假教务：记录每个路径被打了几次，服务学期列表 / 课表（20 周）/ 教学任务 / 进度班级列表 */
-async function startFakeJwxt() {
+async function startFakeJwxt({ termsDelay = 0 } = {}) {
   const hits = new Map();
   const bump = (key) => hits.set(key, (hits.get(key) || 0) + 1);
   const server = createServer((req, res) => {
@@ -29,8 +29,13 @@ async function startFakeJwxt() {
     }
     if (url.pathname === '/ahsljw/frame/droplist/getDropLists.action') {
       bump('terms');
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify([{ code: '20241', name: '2024-2025 学年第一学期' }]));
+      const respond = () => {
+        if (res.destroyed) return;
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify([{ code: '20241', name: '2024-2025 学年第一学期' }]));
+      };
+      if (termsDelay > 0) setTimeout(respond, termsDelay);
+      else respond();
       return;
     }
     if (url.pathname === '/ahsljw/frame/desk/showLessonScheduleInfosV14.action') {
@@ -55,8 +60,8 @@ async function startFakeJwxt() {
   return { server, hits, base: `http://127.0.0.1:${server.address().port}`, hit: (k) => hits.get(k) || 0 };
 }
 
-async function boot(env = {}) {
-  const fake = await startFakeJwxt();
+async function boot(env = {}, options = {}) {
+  const fake = await startFakeJwxt(options);
   const probe = createServer();
   await new Promise((r) => probe.listen(0, '127.0.0.1', r));
   const port = probe.address().port;
@@ -91,7 +96,7 @@ async function boot(env = {}) {
     assert.ok(resolve(dir).startsWith(resolve(tmpdir()) + sep));
     rmSync(dir, { recursive: true, force: true });
   };
-  return { fake, get, stop };
+  return { fake, get, stop, base: `http://127.0.0.1:${port}` };
 }
 
 const waitFor = async (fn, timeoutMs = 8000) => {
@@ -112,22 +117,27 @@ test('登录后自动预热：切 tab 直接命中缓存，且存活探测不再
     assert.equal(session.body.loggedIn, true);
     assert.equal(fake.hit('probe'), 1, '首次请求探测一次');
 
-    // 预热在后台跑：客户端没请求课表/教学任务，上游却已经被拉过
-    assert.ok(await waitFor(() => fake.hit('schedule') >= 20, 9000), `预热应拉课表（实际 ${fake.hit('schedule')} 次周请求）`);
+    // 预热在后台跑：客户端没请求课表/教学任务，上游却已经拉过（当前周 ±1，而不是整学期 20 周）
+    assert.ok(await waitFor(() => fake.hit('schedule') >= 2, 9000), `预热应拉当前周课表（实际 ${fake.hit('schedule')} 次周请求）`);
+    assert.ok(fake.hit('schedule') <= 3, `预热不应整学期拉取（实际 ${fake.hit('schedule')} 次周请求）`);
     assert.ok(fake.hit('tasks') >= 1, '预热应拉教学任务');
 
     // 切 tab：命中预热好的缓存，不再打上游
     // 服务端把学期 code 20241 归一成 value '2024,1'，缓存键用的是归一后的值
     const term = encodeURIComponent((await get('/api/terms')).body.terms[0].value);
-    const scheduleHits = fake.hit('schedule');
     const tasksHits = fake.hit('tasks');
     const schedule = await get(`/api/schedule?term=${term}`);
     assert.equal(schedule.status, 200);
     assert.ok(Array.isArray(schedule.body.courses), '课表数据可用');
+    assert.ok(fake.hit('schedule') >= 20, '整学期课表请求补齐其余周次');
     const tasks = await get(`/api/tasks?term=${term}`);
     assert.equal(tasks.status, 200);
-    assert.equal(fake.hit('schedule'), scheduleHits, '切周课表不应再回源');
     assert.equal(fake.hit('tasks'), tasksHits, '切教学任务不应再回源');
+
+    // 已加载的学期再请求：整学期缓存命中，不再回源
+    const scheduleHits = fake.hit('schedule');
+    await get(`/api/schedule?term=${term}`);
+    assert.equal(fake.hit('schedule'), scheduleHits, '切周课表不应再回源');
 
     // 多次请求只探测一次上游（存活结论 45 秒内复用）
     await get(`/api/schedule?term=${term}`);
@@ -164,6 +174,23 @@ test('JWXT_WARMUP=0 时不做预热，也不影响正常取数', async () => {
     const schedule = await get('/api/schedule?term=2024%2C1');
     assert.equal(schedule.status, 200);
     assert.ok(fake.hit('schedule') >= 20, '按需请求照常回源');
+  } finally {
+    await stop();
+  }
+});
+
+test('退出后未完成的预热被取消：不再继续回源（R04）', async () => {
+  const { fake, get, stop, base } = await boot({}, { termsDelay: 300 });
+  try {
+    // 预热卡在学期列表上时退出登录
+    const session = await get('/api/session');
+    assert.equal(session.body.loggedIn, true);
+    await new Promise((r) => setTimeout(r, 100));
+    const logout = await fetch(`${base}/api/logout`, { method: 'POST', headers: { cookie: `td_sid=${SID}` } });
+    assert.equal(logout.status, 200);
+    await new Promise((r) => setTimeout(r, 700));
+    assert.equal(fake.hit('schedule'), 0, '退出后旧会话的预热不应继续拉课表');
+    assert.equal(fake.hit('tasks'), 0, '退出后旧会话的预热不应继续拉教学任务');
   } finally {
     await stop();
   }

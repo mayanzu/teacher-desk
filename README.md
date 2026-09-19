@@ -58,7 +58,13 @@ cp .env.example .env       # Windows PowerShell: copy .env.example .env
 | `JWXT_QR_TIMEOUT_MS` | `300000` | 二维码有效期（毫秒） |
 | `SESSION_DIR` | `<项目>/.sessions/` | 各浏览器会话的持久化目录（容器内用 `/data/sessions`） |
 | `JWXT_CALENDAR` | 空 | 按学期配置真实首周周一与作息（未配置时界面标注“估算”），见下方「回归验证与校历配置」 |
+| `JWXT_FETCH_CONCURRENCY` | `3` | 同一会话的上游并发上限（统一调度器；设为 `1` 完全串行） |
+| `JWXT_GLOBAL_CONCURRENCY` | `8` | 同一教务源的全局并发上限（所有浏览器会话共享，防止多人叠加） |
+| `JWXT_WARMUP` | `1` | 设为 `0` 关闭登录后的后台预热 |
+| `JWXT_PERF_LOG` | `0` | 设为 `1` 输出每请求阶段耗时（脱敏，不记学生数据） |
 | `COOKIE_SECURE` | `0` | HTTPS 部署设为 `1`，会话 Cookie 增加 `Secure` 标记 |
+
+> 缓存字节预算、导出 TTL、文件名查询预算、会话刷盘间隔、预热重试次数等完整参数见 `.env.example`。
 
 ### 4. 运行
 
@@ -124,6 +130,7 @@ docker run -d --name teacher-desk \
 | `POST /api/logout` | 退出并清除本地会话 |
 | `GET /api/terms` | 学年学期列表（含当前学期） |
 | `GET /api/schedule?term=2026,0` | 周课表（课程、周次、单双周、教室、班级、作息时间、开学首周周一） |
+| `GET /api/schedule/partial?term=2026,0[&weeks=1,2,3][&prefetch=1]` | 分段周课表：默认当前周 ±1，返回 `loadedWeeks / pendingWeeks / failedWeeks / complete`；其余周次可用 `prefetch=1` 低优先级后台补齐 |
 | `GET /api/tasks?term=2026,0` | 教学任务（承担理论课程） |
 | `GET /api/progress?term=2026,0` | 教学进度查看（周次/日期/节次/班级/地点/授课内容） |
 | `GET /api/progress/classes?term=2026,0` | 需录入进度的教学班列表（含审核状态） |
@@ -144,11 +151,17 @@ docker run -d --name teacher-desk \
 server/
 ├── index.mjs        HTTP 服务与路由
 ├── config.mjs       .env 与环境参数
-├── session.mjs      Cookie 会话、同源校验、GBK/UTF-8 解码
+├── cache.mjs        带字节预算的 LRU 缓存与统一 cached()
+├── data.mjs         会话隔离的数据访问层（共享班级/表格/周次缓存、定向失效）
+├── warmup.mjs       登录后后台预热（会话代际、低优先级、可取消、有限重试）
+├── perf.mjs         请求级阶段采集（AsyncLocalStorage，默认不输出）
+├── session.mjs      Cookie 会话、同源校验、GBK/UTF-8 解码、调度器接入
 ├── login.mjs        喜鹊儿扫码登录流程
+├── response.mjs     gzip 协商与记忆化压缩
 └── jwxt/            教务接口适配层（按功能拆分）
     ├── common.mjs          通用解析（表格 / GBK 编码 / 学期）
-    ├── schedule.mjs        周课表
+    ├── scheduler.mjs       上游统一调度（会话/全局并发、优先级、取消）
+    ├── schedule.mjs        周课表（按周缓存 / 分段加载）
     ├── tasks.mjs           教学任务
     ├── terms.mjs           学年学期列表
     ├── progress.mjs        教学进度（查看 / 录入 / 复制 / 导出）
@@ -158,7 +171,7 @@ server/
     └── index.mjs           统一出口（barrel）
 web/
 ├── src/components/  界面组件
-├── src/lib/         纯函数工具
+├── src/lib/         纯函数工具（查询缓存、刷新语义、下载生命周期等）
 ├── src/styles/      样式
 └── src/api.ts       前端 API 客户端
 Dockerfile / docker-compose.yml   软路由部署
@@ -176,7 +189,7 @@ ssh root@<router> "docker compose up -d"               # 使用仓库内 docker-
 
 - 容器内为**单进程 Node**（API + 静态资源），监听 `8790`，宿主机映射 `8088`。
 - 会话按浏览器隔离并持久化在卷 `timetable-session`（挂载到容器 `/data`，`SESSION_DIR=/data/sessions`），重建容器无需重新扫码。
-- 可用环境变量：`JWXT_BASE`、`JWXT_INSECURE_TLS`、`PORT`、`SESSION_DIR`、`HOST`、`JWXT_FETCH_CONCURRENCY`（上游并发，默认 3）、`JWXT_CACHE_TTL_MS`（缓存兜底 TTL，默认 5 分钟）。
+- 可用环境变量：`JWXT_BASE`、`JWXT_INSECURE_TLS`、`PORT`、`SESSION_DIR`、`HOST`、`JWXT_FETCH_CONCURRENCY`（每会话上游并发，默认 3）、`JWXT_GLOBAL_CONCURRENCY`（全局并发，默认 8）、`JWXT_CACHE_TTL_MS`（缓存兜底 TTL，默认 5 分钟）、缓存字节预算与 `JWXT_WARMUP` 等，完整列表见 `.env.example`。
 - 镜像基于 `node:22-alpine`，仅安装生产依赖；前端在构建阶段产出，运行镜像不含源码与开发依赖。
 
 ## 多用户（同一实例多老师共用）
@@ -208,7 +221,9 @@ ssh root@<router> "docker compose up -d"               # 使用仓库内 docker-
 
 运行 `npm test` 执行隔离回归测试，运行 `npm run build` 检查前端类型与生产构建，运行 `npm run lint` 对后端/工具/测试做 `no-undef` 静态检查（前端构建与 `node --check` 都发现不了未定义变量）。`npm run verify` 会依次执行 lint、typecheck、测试与构建；CI 在 Node 20 / 22 上运行同一套检查（见 `.github/workflows/ci.yml`）。测试使用合成数据与 HTML fixture，不向教务系统写入。
 
-查询结果在服务端按浏览器会话缓存，最多 200 项，并合并并发相同请求；每个缓存键按数据变化频率分层 TTL：学期列表 12 小时，课表/教学任务/成绩 30 分钟，点名册 10 分钟，其余（教学进度等）5 分钟。界面上每个「刷新」按钮都会带 `?refresh=1` 绕过缓存直接回源（例如 `/api/schedule?term=2026,0&refresh=1`），所以分层 TTL 不会让手动刷新的结果变旧；该参数也可以手工调用任意取数接口。导出结果（教学进度 PDF、成绩 PDF/Excel、点名册 PDF）另有一块独立小缓存（每浏览器最多 20 份、默认 5 分钟，`JWXT_EXPORT_TTL_MS` 可调）：一次导出要 2 次上游往返且结果几百 KB，所以重复下载直接命中；教学进度保存成功后会立即清掉该浏览器的导出缓存，避免下载到保存前的文件。点名册 PDF（`/api/roster/export/pdf`）由本机排版生成，内容与打印预览（`/api/roster/report?format=print`）一致：完整名单、表头每页重复、没有教务报表页的页眉与页内边框，页脚标页码 —— 教务的 `frame/pdf?method=topdf` 只能转出报表页当前那一页并带着页面装饰，所以不用它。中文靠本机字体渲染，需要系统里有一个简体中文 TTF/OTF（如 `fonts-arphic-gbsn00lp`、`fonts-wqy-zenhei`；`.ttc` 字体集合 pdfkit 读不了），也可以用 `ROSTER_PDF_FONT` 指定文件；没有任何可用字体时接口返回 500 并说明如何安装，而不是输出缺字的 PDF。CSV 仍然保留（`/api/roster/export`）。上游请求默认按 `JWXT_FETCH_CONCURRENCY`（默认 3）并发拉取，「上游串行 vs 并发」的实测数字可以用 `node tools/bench-upstream-concurrency.mjs` 复跑（默认打本地假上游，加 `--base` 才打真实教务）。**登录后会在后台自动预热**当前学期的课表、教学任务、成绩、点名册、教学进度（`JWXT_WARMUP=0` 可关），所以切这些 tab 时直接命中缓存、不用等上游；预热失败只记一条日志，不影响按需取数。**每次受保护请求前的会话存活检查**（会真的打一次教务，实测单次 0.4~2s）在确认存活后的 `JWXT_SESSION_PROBE_TTL_MS`（默认 45 秒）内复用结论，而不是每个请求都探一次——这是「缓存了却还在转圈」的主因；设 0 恢复旧行为，真实掉线最多晚 45 秒被发现（此时会返回 401 提示重新扫码），探测失败不记忆，上游抖动不会误判成退出登录。匿名会话 30 分钟未活动回收，已登录会话 7 天未活动回收，内存上下文总数上限 500。`POST /api/login/start` 按来源 IP 限流（5 分钟内 10 次）。写请求校验 `Origin`：无 `Origin` 或同源（含 `localhost` 不同端口）放行。登录 Cookie 持久化到会话目录。
+查询结果在服务端按浏览器会话缓存（条数 + 字节双预算，超预算按最近最少使用淘汰，过期项定时清扫），并合并并发相同请求；每个缓存键按数据变化频率分层 TTL：学期列表 12 小时，课表/教学任务/成绩 30 分钟，点名册 10 分钟，其余（教学进度等）5 分钟。界面上每个「刷新」按钮都会带 `?refresh=1` 绕过缓存直接回源（例如 `/api/schedule?term=2026,0&refresh=1`），所以分层 TTL 不会让手动刷新的结果变旧；该参数也可以手工调用任意取数接口。导出结果（教学进度 PDF、成绩 PDF/Excel、点名册 PDF）另有一块独立小缓存（每浏览器最多 20 份、默认 5 分钟且有 64 MiB 字节预算，`JWXT_EXPORT_TTL_MS` 可调）：一次导出要 2 次上游往返且结果几百 KB，所以重复下载直接命中；同一份导出缓存的 JSON/base64/gzip 编码会按 Buffer 记忆，热下载不再重复编码。教学进度保存成功后会**定向失效**该学期的进度汇总/明细/导出缓存（课表、教学任务、成绩等无关缓存保留），避免下载到保存前的文件。点名册 PDF（`/api/roster/export/pdf`）由本机排版生成，内容与打印预览（`/api/roster/report?format=print`）一致：完整名单、表头每页重复、没有教务报表页的页眉与页内边框，页脚标页码 —— 教务的 `frame/pdf?method=topdf` 只能转出报表页当前那一页并带着页面装饰，所以不用它。中文靠本机字体渲染，需要系统里有一个简体中文 TTF/OTF（如 `fonts-arphic-gbsn00lp`、`fonts-wqy-zenhei`；`.ttc` 字体集合 pdfkit 读不了），也可以用 `ROSTER_PDF_FONT` 指定文件；没有任何可用字体时接口返回 500 并说明如何安装，而不是输出缺字的 PDF。CSV 仍然保留（`/api/roster/export`）。上游请求由**统一调度器**约束（每会话 `JWXT_FETCH_CONCURRENCY` 默认 3、全局 `JWXT_GLOBAL_CONCURRENCY` 默认 8、有界队列超限返回 503、鉴权/用户操作优先于后台预取），额度覆盖到响应体读完；「上游串行 vs 并发」的实测数字可以用 `node tools/bench-upstream-concurrency.mjs` 复跑（默认打本地假上游，加 `--base` 才打真实教务）。**登录后会在后台自动预热**当前周的课表（当前周 ±1，其余周次由课表页可见后低优先级补齐）、教学任务、成绩列表、点名册、教学进度（`JWXT_WARMUP=0` 可关）；预热任务绑定会话代际，退出/换账号会取消未完成的请求，失败允许有限重试、不会被永久跳过。**每次受保护请求前的会话存活检查**（会真的打一次教务，实测单次 0.4~2s）在确认存活后的 `JWXT_SESSION_PROBE_TTL_MS`（默认 45 秒）内复用结论，而不是每个请求都探一次——这是「缓存了却还在转圈」的主因；设 0 恢复旧行为，真实掉线最多晚 45 秒被发现（此时会返回 401 提示重新扫码），探测失败不记忆，上游抖动不会误判成退出登录。匿名会话 30 分钟未活动回收，已登录会话 7 天未活动回收，内存上下文总数上限 500，会话活动时间戳按 `JWXT_SESSION_TOUCH_MS`（默认 60 秒）合并异步刷盘。`POST /api/login/start` 按来源 IP 限流（5 分钟内 10 次）。写请求校验 `Origin`：无 `Origin` 或同源（含 `localhost` 不同端口）放行。登录 Cookie 持久化到会话目录。
+
+首屏与交互侧：课表按周缓存、分段加载（`/api/schedule/partial`），当前周先显示、慢的远周不再阻塞首屏，接口显式区分「未加载」和「没有课」；刷新失败时保留已显示内容并提示更新时间/失败原因，而不是清空成错误页；「重试」把强制回源限定为一次显式操作，普通切学期不会被历史点击持续绕过缓存。导出按钮点击后立刻进入「生成中/正在下载/正在保存」的等待态，同一份文件的并发下载共享一个任务、只保存一次，并带超时与取消。普通 JSON API 在客户端接受且正文 ≥1 KiB 时使用 gzip；`npm run build` 会为构建产物生成 `.gz`（`tools/precompress.mjs`），服务端优先返回预压缩文件，同一个 hash 资源不再实时压缩。设置 `JWXT_PERF_LOG=1` 可输出每请求的 `total/queue/upstream` 阶段耗时与上游/缓存计数（只写路径形状，不记学生数据）。
 
 导出的 CSV 会把 `=`、`+`、`-`、`@` 开头的可疑内容转为文本，并对有前导零或超长（≥15 位）的学号使用 `="…"` 形式，避免表格软件执行公式或丢失精度。
 

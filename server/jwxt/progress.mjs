@@ -132,6 +132,10 @@ function parseGridRows(html) {
 
 const PROGRESS_LIST_TABLE = '1004010319';
 const PROGRESS_GRID_TABLE = '5529052';
+// 教务同一份录入表在不同专业/学期可能用不同 tableId；按顺序探测第一个有数据的。
+const PROGRESS_GRID_TABLES = [PROGRESS_GRID_TABLE, '5929112', '5929131', '5929365', '5929137'];
+
+const progressRef = (session) => `${session.base}/ahsljw/wjstgdfw/jxap.lrjxjdb10319.html?menucode=T2020201`;
 
 function progressBody(xn, xq) {
   return `xn=${xn}&xn1=${xn}&xq=${xq}&xq_m=${xq}&xnxq=${xn},${xq}`;
@@ -176,9 +180,12 @@ export async function getProgressClasses(session, term) {
   return { items, headers, xn, xq };
 }
 
-export async function getProgressEntry(session, term, params) {
+/**
+ * 录入表单（表单元数据 + formFields）。编辑/保存必须用当场读到的元数据，不做长期缓存（review R03）。
+ */
+export async function getProgressEntryForm(session, term, params) {
   const { xn, xq } = parseTerm(term);
-  const ref = `${session.base}/ahsljw/wjstgdfw/jxap.lrjxjdb10319.html?menucode=T2020201`;
+  const ref = progressRef(session);
   const query = new URLSearchParams({
     operationType: 'ADD',
     xn: String(xn),
@@ -199,7 +206,6 @@ export async function getProgressEntry(session, term, params) {
   for (const m of form.text.matchAll(/<input[^>]*name=["'](jxjcb\.[A-Za-z0-9_]+|teachingTaskJxjcbId|teachingTaskId|pklb|jsdm|jsxm|lsjs)["'][^>]*value=["']([^"']*)["']/gi)) {
     meta[m[1]] = m[2];
   }
-
   if (!Object.keys(meta).length) throw Object.assign(new Error('教学进度表单结构异常，请重新加载'), { status: 502 });
   const formFields = {};
   for (const m of form.text.matchAll(/<input\b[^>]*>/gi)) {
@@ -208,16 +214,46 @@ export async function getProgressEntry(session, term, params) {
     if (!name) continue;
     formFields[name] = tag.match(/value=["']([^"']*)["']/i)?.[1] ?? '';
   }
-  const metaBody = Object.entries(meta)
+  return { meta, formFields, ref, xn, xq };
+}
+
+/** 学期课周数：只依赖学期，可安全地在会话内缓存复用（review R03）。 */
+export async function getProgressXqskzs(session, term) {
+  const { xn, xq } = parseTerm(term);
+  try {
+    const zs = await session.text('/ahsljw/jw/common/getXqskzs.action', {
+      method: 'POST',
+      referer: progressRef(session),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+      body: `xn=${xn}&xq_m=${xq}`,
+    });
+    return parseXqskzs(zs.text);
+  } catch {
+    /* 忽略：使用默认周数 */
+    return '';
+  }
+}
+
+/**
+ * 录入表格行（只读内容）。`verifiedTable` 是同学期已验证可用的 tableId，优先尝试；
+ * 验证过的表格返回「有结构 + 明确空标记」时视为合法空表，不再遍历其余候选（review R03）。
+ */
+export async function getProgressRows(session, term, params, { meta, verifiedTable = '' } = {}) {
+  const formMeta = meta ?? (await getProgressEntryForm(session, term, params)).meta;
+  const { xn, xq } = parseTerm(term);
+  const ref = progressRef(session);
+  const metaBody = Object.entries(formMeta)
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
     .join('&');
-
   const gridBody = `${metaBody}&xn=${xn}&xq_m=${xq}`;
-  const gridTables = [PROGRESS_GRID_TABLE, '5929112', '5929131', '5929365', '5929137'];
+  const tables = verifiedTable
+    ? [verifiedTable, ...PROGRESS_GRID_TABLES.filter((tableId) => tableId !== verifiedTable)]
+    : [...PROGRESS_GRID_TABLES];
   let rows = [];
-  let gridTable = gridTables[0];
+  let gridTable = tables[0];
+  let legitEmpty = false;
   const gridResponses = [];
-  for (const tableId of gridTables) {
+  for (const tableId of tables) {
     const grid = await session.text(`/ahsljw/taglib/DataTable_utf8.jsp?tableId=${tableId}&hidOption=`, {
       method: 'POST',
       referer: ref,
@@ -231,8 +267,18 @@ export async function getProgressEntry(session, term, params) {
       rows = parsed;
       break;
     }
+    if (tableId === verifiedTable) {
+      const hasStructure = /<t[dr]\b|<table/i.test(grid.text);
+      const emptyMarker = /暂无|无记录|没有|无数据/i.test(grid.text);
+      const trivial = grid.text.replace(/<[^>]*>/g, '').replace(/\s+/g, '').length < 100;
+      // 已在本学期成功解析过的表格，返回「有结构 + 明确空标记」→ 合法空表
+      if (hasStructure && emptyMarker && !trivial) {
+        legitEmpty = true;
+        break;
+      }
+    }
   }
-  if (!rows.length) {
+  if (!rows.length && !legitEmpty) {
     const emptyMarker = gridResponses.some((text) => /暂无|无记录|没有|无数据/i.test(text));
     const trivial = gridResponses.every((text) => text.replace(/<[^>]*>/g, '').replace(/\s+/g, '').length < 100);
     const hasStructure = gridResponses.some((text) => /<t[dr]\b|<table/i.test(text));
@@ -240,28 +286,24 @@ export async function getProgressEntry(session, term, params) {
       throw Object.assign(new Error('教学进度表格结构异常，请稍后重试或联系教务确认'), { status: 502 });
     }
   }
-  let xqskzs = '';
-  try {
-    const zs = await session.text('/ahsljw/jw/common/getXqskzs.action', {
-      method: 'POST',
-      referer: ref,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
-      body: `xn=${xn}&xq_m=${xq}`,
-    });
-    xqskzs = parseXqskzs(zs.text);
-  } catch {
-    /* 忽略：使用默认周数 */
-  }
+  return { rows, gridTable, empty: rows.length === 0 };
+}
 
-  const totals = {
+export function progressTotals(params) {
+  return {
     lecture: Number(params.jsxs) || 0,
     lab: Number(params.syxs) || 0,
     practice: Number(params.sjxs) || 0,
     labor: Number(params.ldxs) || 0,
     other: Number(params.qtxs) || 0,
   };
+}
 
-  return { meta, formFields, rows, gridTable, xqskzs, totals, xn, xq };
+export async function getProgressEntry(session, term, params) {
+  const form = await getProgressEntryForm(session, term, params);
+  const { rows, gridTable } = await getProgressRows(session, term, params, { meta: form.meta });
+  const xqskzs = await getProgressXqskzs(session, term);
+  return { meta: form.meta, formFields: form.formFields, rows, gridTable, xqskzs, totals: progressTotals(params), xn: form.xn, xq: form.xq };
 }
 
 /** 严格解析“本学期课周数”响应：只接受纯数字或 JSON 中的 xqskzs 字段。 */
@@ -483,9 +525,26 @@ export async function getProgressCourses(session, term) {
     .filter((item) => item.courseName);
 }
 
-export async function getProgressSummary(session, term) {
+/**
+ * 教学进度汇总。
+ *
+ * `deps` 由服务端数据层注入（server/data.mjs），复用班级列表、表格行与学期周数缓存：
+ *   - loadClasses(session, term)
+ *   - loadRows(item)  → { rows }
+ *   - loadProgress(session, term) / loadCourses(session, term)（历史学期回退）
+ * 不传 deps 时保持旧行为（每个班现拉表单 + 表格），供底层单测使用。
+ */
+export async function getProgressSummary(session, term, deps = {}) {
+  const loadClasses = deps.loadClasses || ((s, t) => getProgressClasses(s, t));
+  const loadRows = deps.loadRows || (async (item) => {
+    const form = await getProgressEntryForm(session, term, item.params);
+    return getProgressRows(session, term, item.params, { meta: form.meta });
+  });
+  const loadProgress = deps.loadProgress || ((s, t) => getProgress(s, t));
+  const loadCourses = deps.loadCourses || ((s, t) => getProgressCourses(s, t));
+
   // 当前学期：按“录入教学班”聚合，课程维度准确
-  const classes = await getProgressClasses(session, term);
+  const classes = await loadClasses(session, term);
   if (classes.items.length) {
     const items = [];
     const failures = [];
@@ -493,7 +552,7 @@ export async function getProgressSummary(session, term) {
     // 并发上限默认 3（JWXT_FETCH_CONCURRENCY 可调，设为 1 回到串行）。
     const entries = await mapWithConcurrency(classes.items, fetchConcurrency(), async (item) => {
       try {
-        return { entry: await getProgressEntry(session, term, item.params) };
+        return { entry: await loadRows(item) };
       } catch (error) {
         // 登录失效必须整体失败，其余班级异常只记录并继续
         if (error?.status === 401) throw error;
@@ -537,10 +596,10 @@ export async function getProgressSummary(session, term) {
   }
 
   // 历史学期：录入列表为空，改用“查看学期教学进度表”的数据，按教学班（上课班级代码）聚合
-  const progress = await getProgress(session, term);
+  const progress = await loadProgress(session, term);
   let courseMap = new Map();
   try {
-    courseMap = new Map((await getProgressCourses(session, term)).map((item) => [item.classCode, item.courseName]));
+    courseMap = new Map((await loadCourses(session, term)).map((item) => [item.classCode, item.courseName]));
   } catch {
     courseMap = new Map();
   }

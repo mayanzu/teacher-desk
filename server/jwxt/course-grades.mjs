@@ -155,6 +155,38 @@ export async function getCourseGradesReport(session, params) {
   };
 }
 
+const FILENAME_BUDGET_DEFAULT = 800;
+
+function settleWithin(promise, ms, fallback) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(fallback), ms);
+    promise.then(finish, () => finish(fallback));
+  });
+}
+
+/** 文件名用的教师姓名：可选的短预算查询，失败/超时返回空字符串（review R08）。 */
+async function filenameTeacher(session, params) {
+  if (params.teacher) return String(params.teacher);
+  const budget = Number(process.env.JWXT_FILENAME_BUDGET_MS) > 0 ? Number(process.env.JWXT_FILENAME_BUDGET_MS) : FILENAME_BUDGET_DEFAULT;
+  return settleWithin(
+    (async () => {
+      const report = await getCourseGradesReport(session, params);
+      const cell = report.meta.find((text) => text.startsWith('任课教师'));
+      if (!cell) return '';
+      return cell.replace(/^任课教师[:：]\s*/, '').replace(/^\[[^\]]*\]\s*/, '').trim();
+    })(),
+    budget,
+    '',
+  );
+}
+
 export async function exportCourseGradesPdf(session, params) {
   const { xn, xq } = parseTerm(params.term);
   const flag = String(params.flag ?? '1');
@@ -189,20 +221,16 @@ export async function exportCourseGradesPdf(session, params) {
     throw new Error((data && data.message) || '原版 PDF 生成失败');
   }
   const [fileName, fileSavePath] = String(data.result).split(';;');
+  // 文件名只需要教师姓名（可选字段）：与 PDF 下载并行、设短预算。
+  // PDF 已经生成/下载完成后，不能再为一个可选字段阻塞一次完整上游超时（review R08/R17）。
+  const metadata = filenameTeacher(session, params);
   const dl = await session.request(
     `/ahsljw/frame/pdf?method=download&title=${doubleEncode(fileName)}&fileSavePath=${encodeURIComponent(fileSavePath)}`,
     { method: 'GET', referer: `${session.base}/ahsljw/frame/pdf?method=topdf` },
   );
 
   // 文件名：[教师姓名]_[课程名]_[班级名]_原始成绩.pdf
-  let teacher = '';
-  try {
-    const report = await getCourseGradesReport(session, params);
-    const cell = report.meta.find((text) => text.startsWith('任课教师'));
-    if (cell) teacher = cell.replace(/^任课教师[:：]\s*/, '').replace(/^\[[^\]]*\]\s*/, '').trim();
-  } catch {
-    teacher = '';
-  }
+  const teacher = (await metadata) || '';
   const parts = [
     teacher,
     params.courseName,

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { api, readApiCache, errorMessage, isUnauthorized } from '../api';
+import { useRefreshRequest, useRefreshConsumer } from '../lib/useRefreshRequest';
 import type { ProgressClassesData, ProgressClass, ProgressCopyOption, ProgressEntryRow, ProgressTotals } from '../types';
 import { EmptyState, ErrorState, LoadingState } from './StateViews';
 
@@ -11,13 +12,54 @@ interface ProgressEntryProps {
   onDirtyChange?: (dirty: boolean) => void;
 }
 
+interface EntryRowProps {
+  row: ProgressEntryRow;
+  index: number;
+  disabled: boolean;
+  onUpdate: (index: number, patch: Partial<ProgressEntryRow>) => void;
+}
+
+/**
+ * 行级 memo（review R14）：编辑一个单元格只重渲染这一行，
+ * onUpdate 是稳定引用，行对象未变时 React 直接跳过。
+ */
+const EntryRow = memo(function EntryRow({ row, index, disabled, onUpdate }: EntryRowProps) {
+  return (
+    <tr>
+      <td>{row.week}</td>
+      <td>{row.date}</td>
+      <td>{row.period}</td>
+      <td>
+        <textarea
+          className="entry-input"
+          disabled={disabled}
+          aria-label={`第 ${row.week} 周授课内容`}
+          value={row.content}
+          rows={2}
+          onChange={(event) => onUpdate(index, { content: event.target.value })}
+        />
+      </td>
+      <td>
+        <input
+          className="entry-input"
+          disabled={disabled}
+          aria-label={`第 ${row.week} 周备注`}
+          value={row.remark}
+          onChange={(event) => onUpdate(index, { remark: event.target.value })}
+        />
+      </td>
+    </tr>
+  );
+});
+
 export function ProgressEntry({ term, onUnauthorized, onDirtyChange }: ProgressEntryProps) {
   const cached = readApiCache<ProgressClassesData>('progress/classes', term);
   const requestId = useRef(0);
   const copyId = useRef(0);
   const loadedId = useRef(-1);
   const [listLoading, setListLoading] = useState(!cached);
-  const [listAttempt, setListAttempt] = useState(0);
+  const { token: refreshToken, requestRefresh } = useRefreshRequest(`entry:${term}`);
+  const { forceFor } = useRefreshConsumer();
   const [classes, setClasses] = useState<ProgressClass[]>(cached?.items ?? []);
   const [selected, setSelected] = useState<ProgressClass | null>(null);
   const [rows, setRows] = useState<ProgressEntryRow[]>([]);
@@ -70,21 +112,30 @@ export function ProgressEntry({ term, onUnauthorized, onDirtyChange }: ProgressE
 
   useEffect(() => {
     let cancelled = false;
+    const force = forceFor(refreshToken);
     const snapshot = readApiCache<ProgressClassesData>('progress/classes', term);
     setListLoading(!snapshot);
-    setClasses(snapshot?.items ?? []);
+    // 有缓存快照才覆盖；刷新失败时保留已显示的教学班（review R06）
+    if (snapshot) setClasses(snapshot.items ?? []);
     setSelected(null);
     setRows([]);
     setCopyOpen(false);
     setError('');
     showNotice('');
     api
-      .progressClasses(term, { refresh: listAttempt > 0 })
+      .progressClasses(term, { refresh: force })
       .then((data) => {
         if (!cancelled) setClasses(data.items ?? []);
       })
       .catch((err: unknown) => {
-        if (!cancelled) handleError(err);
+        if (cancelled) return;
+        if (isUnauthorized(err)) {
+          onUnauthorized();
+          return;
+        }
+        // 已有列表时保留内容，只提示刷新失败（review R06）
+        if (snapshot || classes.length) showNotice(`刷新失败（${errorMessage(err)}），正在显示上一次加载的教学班。`, 'error');
+        else handleError(err);
       })
       .finally(() => { if (!cancelled) setListLoading(false); });
     return () => {
@@ -92,7 +143,7 @@ export function ProgressEntry({ term, onUnauthorized, onDirtyChange }: ProgressE
       copyId.current += 1;
       cancelled = true;
     };
-  }, [term, handleError, listAttempt, showNotice]);
+  }, [term, handleError, refreshToken, showNotice, onUnauthorized, forceFor]);
 
   const openClass = async (item: ProgressClass) => {
     if (dirty && !window.confirm('当前教学班有未提交的修改，切换后将会丢失，确定继续？')) return;
@@ -130,7 +181,7 @@ export function ProgressEntry({ term, onUnauthorized, onDirtyChange }: ProgressE
     }
   };
 
-  const updateRow = (index: number, patch: Partial<ProgressEntryRow>) => {
+  const updateRow = useCallback((index: number, patch: Partial<ProgressEntryRow>) => {
     setDirty(true);
     setRows((prev) =>
       prev.map((row, i) => {
@@ -140,7 +191,7 @@ export function ProgressEntry({ term, onUnauthorized, onDirtyChange }: ProgressE
         return next;
       }),
     );
-  };
+  }, []);
 
   const submit = async () => {
     if (!selected || !rows.length || saving || loading || copyLoading || loadedId.current !== requestId.current) return;
@@ -294,7 +345,7 @@ export function ProgressEntry({ term, onUnauthorized, onDirtyChange }: ProgressE
           {classes.length === 0 && !listLoading && !error && <EmptyState title="暂无教学进度录入任务" message="本学期没有需要录入的教学班。" />}
         </div>
 
-        {error && <ErrorState title="录入数据加载失败" message={error} onRetry={() => selected ? void openClass(selected) : setListAttempt((v) => v + 1)} />}
+        {error && <ErrorState title="录入数据加载失败" message={error} onRetry={() => selected ? void openClass(selected) : requestRefresh()} />}
         {loading && <LoadingState message="正在载入录入表单…" />}
 
         {!loading && selected && rows.length > 0 && (
@@ -373,30 +424,13 @@ export function ProgressEntry({ term, onUnauthorized, onDirtyChange }: ProgressE
                 </thead>
                 <tbody>
                   {rows.map((row, index) => (
-                    <tr key={row.subId || index}>
-                      <td>{row.week}</td>
-                      <td>{row.date}</td>
-                      <td>{row.period}</td>
-                      <td>
-                        <textarea
-                          className="entry-input"
-                          disabled={saving || copyLoading}
-                          aria-label={`第 ${row.week} 周授课内容`}
-                          value={row.content}
-                          rows={2}
-                          onChange={(event) => updateRow(index, { content: event.target.value })}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          className="entry-input"
-                          disabled={saving || copyLoading}
-                          aria-label={`第 ${row.week} 周备注`}
-                          value={row.remark}
-                          onChange={(event) => updateRow(index, { remark: event.target.value })}
-                        />
-                      </td>
-                    </tr>
+                    <EntryRow
+                      key={row.subId || index}
+                      row={row}
+                      index={index}
+                      disabled={saving || copyLoading}
+                      onUpdate={updateRow}
+                    />
                   ))}
                 </tbody>
               </table>

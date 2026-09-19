@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { api, readApiCache, errorMessage, isUnauthorized, isUnimplemented } from '../api';
-import { downloadFile } from '../lib/download';
+import { downloadFile, type DownloadPhase } from '../lib/download';
+import { useRefreshRequest, useRefreshConsumer } from '../lib/useRefreshRequest';
 import { ExportButton } from './ExportButton';
 import { Award, ClipboardList, TrendingUp } from './Icons';
 import { EmptyState, ErrorState, LoadingState, PendingState } from './StateViews';
@@ -87,18 +88,21 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
   const cached = readApiCache<FeaturePayload>(module, term);
   const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
   const [pending, setPending] = useState(false);
   const [pendingMessage, setPendingMessage] = useState('');
   const [rows, setRows] = useState<Record<string, unknown>[]>((cached?.items ?? []) as Record<string, unknown>[]);
   const [note, setNote] = useState(cached?.note ?? '');
-  const [attempt, setAttempt] = useState(0);
+  const { token: refreshToken, requestRefresh } = useRefreshRequest(`${module}:${term}`);
+  const { forceFor } = useRefreshConsumer();
+  const { forceFor: forceForRoster } = useRefreshConsumer();
   const [rosterClasses, setRosterClasses] = useState<RosterClass[]>(readApiCache<{ items: RosterClass[] }>('roster/classes', term)?.items ?? []);
   const [downloadError, setDownloadError] = useState('');
 
-  const download = async (url: string, name: string) => {
+  const download = async (url: string, name: string, onPhase?: (phase: DownloadPhase) => void) => {
     setDownloadError('');
     try {
-      await downloadFile(url, name);
+      await downloadFile(url, name, { onPhase });
     } catch (err) {
       setDownloadError(errorMessage(err));
     }
@@ -106,15 +110,20 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
 
   useEffect(() => {
     let cancelled = false;
+    const force = forceFor(refreshToken);
     const snapshot = readApiCache<FeaturePayload>(module, term);
     setLoading(!snapshot);
     setError('');
+    setWarning('');
     setPending(false);
     setPendingMessage('');
-    setRows((snapshot?.items ?? []) as Record<string, unknown>[]);
-    setNote(snapshot?.note ?? '');
+    // 有缓存快照才覆盖当前内容；普通“刷新失败”不能先把已显示的数据清掉（review R06）
+    if (snapshot) {
+      setRows((snapshot.items ?? []) as Record<string, unknown>[]);
+      setNote(snapshot.note ?? '');
+    }
     api
-      .feature(module, term, { refresh: attempt > 0 })
+      .feature(module, term, { refresh: force })
       .then((payload) => {
         if (cancelled) return;
         const items = (payload as FeaturePayload | null)?.items;
@@ -132,7 +141,9 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
           setPendingMessage(errorMessage(err));
           return;
         }
-        setError(errorMessage(err));
+        // 已有可显示数据时保留内容，只提示刷新失败（review R06）
+        if (snapshot || rows.length) setWarning(`刷新失败（${errorMessage(err)}），正在显示上一次加载的数据。`);
+        else setError(errorMessage(err));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -140,14 +151,15 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
     return () => {
       cancelled = true;
     };
-  }, [module, term, attempt, onUnauthorized]);
+  }, [module, term, refreshToken, onUnauthorized, forceFor]);
 
   useEffect(() => {
     if (module !== 'tasks') return;
     let cancelled = false;
+    const force = forceForRoster(refreshToken);
     setRosterClasses(readApiCache<{ items: RosterClass[] }>('roster/classes', term)?.items ?? []);
     api
-      .rosterClasses(term, { refresh: attempt > 0 })
+      .rosterClasses(term, { refresh: force })
       .then((data) => {
         if (!cancelled) setRosterClasses(data.items ?? []);
       })
@@ -157,7 +169,7 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
     return () => {
       cancelled = true;
     };
-  }, [module, term, attempt]);
+  }, [module, term, refreshToken, forceForRoster]);
 
   return (
     <section className="section" aria-labelledby={`${module}Title`}>
@@ -171,17 +183,26 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
         </div>
         <div className="week-nav">
           <span className={'status-pill' + (pending ? ' is-warn' : ' is-ok')}>{pending ? '开发中' : loading ? '加载中' : '已连接'}</span>
-          <button className="kbtn ghost" type="button" onClick={() => setAttempt((value) => value + 1)}>
+          <button className="kbtn ghost" type="button" onClick={requestRefresh}>
             刷新
           </button>
         </div>
       </div>
 
       <div className="panel-card">
+        {warning && (
+          <p className="notice-bar is-warn" role="status">
+            <b>注意</b>
+            {warning}
+            <button className="kbtn ghost" type="button" onClick={requestRefresh}>
+              重试
+            </button>
+          </p>
+        )}
         {loading && <LoadingState message={`正在拉取${config.title}数据…`} />}
 
         {!loading && error && (
-          <ErrorState title={`${config.title}加载失败`} message={error} onRetry={() => setAttempt((value) => value + 1)} />
+          <ErrorState title={`${config.title}加载失败`} message={error} onRetry={requestRefresh} />
         )}
 
         {!loading && !error && pending && (
@@ -264,12 +285,14 @@ function GenericFeatureTable({ module, term, onUnauthorized }: GenericProps) {
                   <ExportButton
                     className="kbtn primary"
                     label="导出点名册 PDF"
-                    onExport={() => download(api.rosterPdfUrl(term, item.kcdm, item.skbjdm), `点名册-${item.skbjdm}.pdf`)}
+                    pendingLabel="正在生成点名册…"
+                    onExport={(report) => download(api.rosterPdfUrl(term, item.kcdm, item.skbjdm), `点名册-${item.skbjdm}.pdf`, report)}
                   />
                   <ExportButton
                     className="kbtn ghost"
                     label="CSV"
-                    onExport={() => download(api.rosterExportUrl(term, item.kcdm, item.skbjdm), `点名册-${item.skbjdm}.csv`)}
+                    pendingLabel="正在导出 CSV…"
+                    onExport={(report) => download(api.rosterExportUrl(term, item.kcdm, item.skbjdm), `点名册-${item.skbjdm}.csv`, report)}
                   />
                 </div>
               ))}

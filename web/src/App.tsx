@@ -54,22 +54,49 @@ export default function App() {
     };
   }, [bootAttempt]);
 
+  // 心跳：前一次完成后才安排下一次；不可见时暂停；失败指数退避 + 抖动（review R15）。
   useEffect(() => {
     if (!session.loggedIn) return;
     let cancelled = false;
-    const timer = window.setInterval(() => {
-      void (async () => {
-        try {
-          const current = await api.session();
-          if (!cancelled && (!current.loggedIn || current.username !== session.username)) resetSessionState();
-        } catch {
-          /* 网络抖动忽略，等下次心跳 */
+    let timer = 0;
+    let failures = 0;
+    const hidden = () => typeof document !== 'undefined' && document.hidden === true;
+    const schedule = (delay: number) => {
+      if (cancelled) return;
+      timer = window.setTimeout(tick, delay);
+    };
+    const tick = async () => {
+      if (cancelled) return;
+      if (hidden()) {
+        schedule(60000);
+        return;
+      }
+      try {
+        const current = await api.session();
+        if (cancelled) return;
+        failures = 0;
+        if (!current.loggedIn || current.username !== session.username) {
+          resetSessionState();
+          return;
         }
-      })();
-    }, 60000);
+        schedule(60000);
+      } catch {
+        // 失败退避并加抖动，避免多标签在同一时刻重试
+        failures = Math.min(failures + 1, 4);
+        schedule(Math.min(30000 * 2 ** failures, 300000) + Math.floor(Math.random() * 5000));
+      }
+    };
+    const onVisible = () => {
+      if (hidden()) return;
+      window.clearTimeout(timer);
+      void tick();
+    };
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible);
+    schedule(60000);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible);
     };
   }, [session.loggedIn, session.username, resetSessionState]);
 

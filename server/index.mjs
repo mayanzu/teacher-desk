@@ -1,15 +1,18 @@
 import { sessionAlive } from './sessionHealth.mjs';
 import { createServer } from 'node:http';
 import { stat, readFile } from 'node:fs/promises';
-import { sendBody } from './response.mjs';
+import { acceptsGzip, sendBody } from './response.mjs';
 import { extname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { readJson, TOO_LARGE } from './readJson.mjs';
 import { config } from './config.mjs';
-import { cacheTtlFor } from './cacheTtl.mjs';
-import { buildRosterPdf, resolveRosterFont } from './jwxt/rosterPdf.mjs';
+import { cached, sweepAllCaches } from './cache.mjs';
+import { createScope, currentScope, logScope, runWithScope, withPriority } from './perf.mjs';
 import { fetchConcurrency, mapWithConcurrency } from './jwxt/concurrency.mjs';
-import { contextFor, persistSession, rotateContext, dropContext, sweepSessions } from './sessionStore.mjs';
-import { getSchedule, getTasks, getTerms, getProgress, getGrades, getProgressClasses, getProgressEntry, buildProgressPayload, saveProgressEntry, getProgressCopyTerms, getProgressCopyClasses, copyProgressFromClass, getProgressSummary, buildProgressCsv, getRoster, buildRosterCsv, buildRosterListHtml, getCourseGradeClasses, getCourseGradesReport, exportCourseGradesPdf, exportCourseGradesExcel, exportProgressPdf } from './jwxt/index.mjs';
+import { shouldWarmUp, warmUp } from './warmup.mjs';
+import { contextFor, persistSession, rotateContext, dropContext, resetContextCaches, sweepSessions } from './sessionStore.mjs';
+import { getTasks, getTerms, getProgress, getGrades, buildProgressPayload, saveProgressEntry, getProgressCopyTerms, getProgressCopyClasses, copyProgressFromClass, buildProgressCsv, getRoster, buildRosterCsv, buildRosterListHtml, getCourseGradeClasses, getCourseGradesReport, exportCourseGradesPdf, exportCourseGradesExcel, exportProgressPdf } from './jwxt/index.mjs';
+import { buildRosterPdf, resolveRosterFont } from './jwxt/rosterPdf.mjs';
+import { loadTerms, loadScheduleView, loadProgressClasses, loadProgressSummary, loadProgressEntry, invalidateProgressAfterSave, peekScheduleTeacher } from './data.mjs';
 
 function courseGradeParams(url, term) {
   return {
@@ -24,53 +27,18 @@ function courseGradeParams(url, term) {
     title: url.searchParams.get('title') || '',
     courseName: url.searchParams.get('courseName') || '',
     className: url.searchParams.get('className') || '',
+    // 前端已从成绩明细里拿到教师名时直接带过来，省掉服务端的可选元数据查询（review R08）
+    teacher: url.searchParams.get('teacher') || '',
   };
 }
 
-// 缓存上限；每个键的 TTL 按数据变化频率分层（见 cacheTtl.mjs）
-const CACHE_MAX = 200;
-// 导出（PDF/Excel）结果单独放一小块缓存：单次回源最贵（进度 PDF 2 次往返、成绩 PDF 4 次），
-// 但结果是几百 KB 的 buffer，不能按条数 200 塞进主缓存，否则最坏会占上百 MB。
-const EXPORT_MAX = 20;
+// 导出（PDF/Excel/点名册）结果单独放一块缓存：单次回源最贵（进度 PDF 2 次往返、成绩 PDF 4 次），
+// 但结果是几百 KB 的 buffer，不能按查询缓存塞，字节预算见 server/cache.mjs。
 const EXPORT_TTL = Number(process.env.JWXT_EXPORT_TTL_MS) > 0 ? Number(process.env.JWXT_EXPORT_TTL_MS) : 5 * 60 * 1000;
+const EXPORT_MAX = 20;
 
-async function cached(ctx, key, fn, force = false, options = {}) {
-  const store = options.store || ctx.cache;
-  const ttl = options.ttl || cacheTtlFor(key);
-  const limit = options.max || CACHE_MAX;
-  const now = Date.now();
-  const hit = store.get(key);
-  if (hit && !force && now - hit.at < ttl) {
-    // 触发 LRU：把命中的键移到队尾
-    store.delete(key);
-    store.set(key, hit);
-    return hit.value;
-  }
-  if (hit) store.delete(key);
-  // 合并同一会话内对相同键的并发请求，避免重复打上游；
-  // 但 ?refresh=1（force）必须真的回源，不能复用刷新前就发出的那次请求。
-  if (!force && ctx.inflight.has(key)) return ctx.inflight.get(key);
-  const pending = (async () => {
-    try {
-      const value = await fn();
-      // 被 force 重发顶替时，旧请求的结果不再写缓存，避免慢的旧结果覆盖新值
-      if (ctx.inflight.get(key) === pending) {
-        store.set(key, { at: Date.now(), value });
-        while (store.size > limit) {
-          const oldest = store.keys().next().value;
-          if (oldest === undefined) break;
-          store.delete(oldest);
-        }
-      }
-      return value;
-    } finally {
-      // 只有自己仍是当前在飞请求时才注销，避免删掉后来者（force 重发）的登记
-      if (ctx.inflight.get(key) === pending) ctx.inflight.delete(key);
-    }
-  })();
-  ctx.inflight.set(key, pending);
-  return pending;
-}
+// 预热开关：JWXT_WARMUP=0 可关掉（比如上游压力大时）
+const WARMUP = process.env.JWXT_WARMUP !== '0';
 
 // 登录限流：按来源 IP 限制 /api/login/start 的频率，避免匿名请求刷接口。
 const LOGIN_WINDOW = 5 * 60 * 1000;
@@ -109,14 +77,37 @@ function originAllowed(req) {
   return local.test(host) && local.test(target);
 }
 
+/**
+ * 可选的 Server-Timing 响应头（review R16）：JWXT_SERVER_TIMING=1 时带上
+ * total/queue/upstream 阶段耗时，方便在浏览器 Network 面板直接看。
+ */
+function applyServerTiming(res) {
+  if (process.env.JWXT_SERVER_TIMING !== '1') return;
+  const scope = currentScope();
+  if (!scope) return;
+  const parts = [`total;dur=${Math.round(performance.now() - scope.startedAt)}`];
+  if (scope.timings.upstream) parts.push(`upstream;dur=${Math.round(scope.timings.upstream)}`);
+  if (scope.timings.queue) parts.push(`queue;dur=${Math.round(scope.timings.queue)}`);
+  res.setHeader('Server-Timing', parts.join(', '));
+}
+
+/**
+ * 统一 JSON 响应：达到阈值且客户端接受 gzip 时压缩（review R11），
+ * 小响应与错误响应原样返回；no-store 语义不变。
+ */
 function json(res, status, payload) {
   const body = JSON.stringify(payload);
-  res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store',
-    'Content-Length': Buffer.byteLength(body),
+  applyServerTiming(res);
+  void sendBody(
+    res.req,
+    res,
+    body,
+    { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
+    true,
+    status,
+  ).catch((error) => {
+    if (!res.destroyed) res.destroy(error);
   });
-  res.end(body);
 }
 
 /*
@@ -124,10 +115,32 @@ function json(res, status, payload) {
  * 前端 fetch 带 Accept: application/json 时改发 { filename, contentType, base64 }，
  * 由前端还原成 Blob 下载：IDM 等下载管理器看不到文件响应，不会再出现「IDM 一份 + 浏览器空文件」的双下载。
  * 直接访问（浏览器地址栏/普通链接）仍返回附件流。
+ *
+ * 同一份导出缓存 Buffer 的 JSON 编码结果按 Buffer 记忆（review R09）：
+ * 重复下载命中导出缓存时不再重复 Base64 编码，gzip 由 response.mjs 同样按 Buffer 记忆。
  */
+const downloadJsonVariants = new WeakMap();
+
+function preparedDownloadJson(filename, contentType, buffer) {
+  let variants = downloadJsonVariants.get(buffer);
+  if (!variants) {
+    variants = new Map();
+    downloadJsonVariants.set(buffer, variants);
+  }
+  const key = `${filename}\u0000${contentType}`;
+  let body = variants.get(key);
+  if (!body) {
+    body = Buffer.from(JSON.stringify({ filename, contentType, base64: buffer.toString('base64') }), 'utf8');
+    if (variants.size >= 4) variants.clear();
+    variants.set(key, body);
+  }
+  return body;
+}
+
 async function sendDownload(req, res, filename, buffer, contentType) {
+  applyServerTiming(res);
   if (/\bapplication\/json\b/.test(String(req.headers.accept || ''))) {
-    const body = JSON.stringify({ filename, contentType, base64: buffer.toString('base64') });
+    const body = preparedDownloadJson(filename, contentType, buffer);
     return sendBody(req, res, body, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   }
   res.writeHead(200, {
@@ -152,6 +165,8 @@ const MIME = {
   '.webmanifest': 'application/manifest+json',
   '.woff2': 'font/woff2',
 };
+
+const COMPRESSIBLE_MIME = /^(text\/|application\/(json|manifest)|image\/svg)/;
 
 const WEB_DIST = process.env.WEB_DIST || join(config.root, 'web', 'dist');
 
@@ -198,7 +213,17 @@ async function serveStatic(req, res, pathname) {
     res.end();
     return true;
   }
-  await sendBody(req, res, await readFile(filePath), { 'Content-Type': contentType }, /^(text\/|application\/(json|manifest)|image\/svg)/.test(contentType));
+  // 构建期生成的 .gz 优先（review R12）：同一个 hash 资源的重复 200 不再实时压缩。
+  if (acceptsGzip(req.headers['accept-encoding'])) {
+    const gzInfo = await fileStat(`${filePath}.gz`);
+    if (gzInfo?.isFile() && gzInfo.mtimeMs >= info.mtimeMs) {
+      const gzBody = await readFile(`${filePath}.gz`);
+      res.setHeader('Content-Encoding', 'gzip');
+      await sendBody(req, res, gzBody, { 'Content-Type': contentType }, false);
+      return true;
+    }
+  }
+  await sendBody(req, res, await readFile(filePath), { 'Content-Type': contentType }, COMPRESSIBLE_MIME.test(contentType));
   return true;
 }
 
@@ -212,58 +237,21 @@ function allowCors(req, res) {
   }
 }
 
-function clearCache(ctx) {
-  ctx.cache.clear();
-  ctx.exports.clear();
-  ctx.inflight.clear();
-}
-
-// 预热开关：JWXT_WARMUP=0 可关掉（比如上游压力大时）
-const WARMUP = process.env.JWXT_WARMUP !== '0';
-const warmed = new WeakSet();
-
-/**
- * 登录后在后台把「切 tab 第一眼要看到」的数据拉进缓存。
- * 顺序：先拿学期列表定出当前学期，再并发预热该学期下的课表/教学任务/成绩/点名/进度数据集。
- * 单个数据集失败只记日志、不影响其它数据集（成绩之类本来就可能为空或没有权限）。
- */
-async function warmUp(ctx, session) {
-  try {
-    const terms = await cached(ctx, 'terms', () => getTerms(session));
-    const term = terms?.[0]?.value;
-    if (!term) return;
-    const jobs = [
-      ['schedule', () => cached(ctx, `schedule:${term}`, () => getSchedule(session, term))],
-      ['tasks', () => cached(ctx, `tasks:${term}`, () => getTasks(session, term))],
-      ['grades', () => cached(ctx, `grades:${term}`, () => getGrades(session, term))],
-      ['courseGradeClasses', () => cached(ctx, `courseGradeClasses:${term}`, () => getCourseGradeClasses(session, term))],
-      ['progressClasses', () => cached(ctx, `progressClasses:${term}`, () => getProgressClasses(session, term))],
-    ];
-    await mapWithConcurrency(jobs, fetchConcurrency(), async ([name, job]) => {
-      try {
-        await job();
-      } catch (error) {
-        console.warn(`[warmup] ${name} 预热失败：${error?.message || error}`);
-      }
-    });
-  } catch (error) {
-    console.warn(`[warmup] 预热中止：${error?.message || error}`);
-  }
-}
-
 async function ensureSession(ctx) {
   if (!ctx.session) throw Object.assign(new Error('未登录，请先扫码'), { status: 401 });
-  if (!(await sessionAlive(ctx))) {
+  // 鉴权探测高优先级，避免被后台预取拖慢（review R01）
+  if (!(await withPriority('high', () => sessionAlive(ctx)))) {
     dropContext(ctx);
     throw Object.assign(new Error('登录已过期，请重新扫码'), { status: 401 });
   }
   return ctx.session;
 }
 
-const server = createServer(async (req, res) => {
+async function handleRequest(req, res, scope) {
   let url;
   try { url = new URL(req.url || '/', 'http://localhost'); }
   catch { return json(res, 400, { error: '无效的请求地址' }); }
+  scope.route = url.pathname;
   allowCors(req, res);
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -279,11 +267,9 @@ const server = createServer(async (req, res) => {
     // 每个浏览器一个独立会话上下文（Cookie: td_sid）
     if (url.pathname.startsWith('/api/')) ctx = contextFor(req, res);
 
-    // 数据预热：老师一登录（或恢复登录态后第一次请求）就在后台把常用数据拉进缓存，
-    // 之后切「周课表」「教学任务」这些 tab 直接命中缓存，不再等上游。
-    // 用 WeakSet 按会话对象记，登录态轮换后自然重新预热；预热失败不影响任何功能。
-    if (ctx?.session && WARMUP && !warmed.has(ctx.session)) {
-      warmed.add(ctx.session);
+    // 数据预热：老师一登录（或恢复登录态后第一次请求）就在后台把常用数据拉进缓存。
+    // 任务绑定 ctx.generation，退出/换账号/清缓存后不再继续写回旧数据。
+    if (ctx?.session && WARMUP && shouldWarmUp(ctx, ctx.session)) {
       void warmUp(ctx, ctx.session);
     }
 
@@ -293,28 +279,33 @@ const server = createServer(async (req, res) => {
     // 导出结果（PDF/Excel/点名册报告）走单独的小缓存：回源最贵、结果最大
     const cacheExport = (key, fn) => cached(ctx, key, fn, refreshRequested, { store: ctx.exports, ttl: EXPORT_TTL, max: EXPORT_MAX });
 
-    // 点名册报表数据（名单 + 课程/班级/任课教师/学期名），PDF 导出与打印预览共用
+    // 点名册报表数据（名单 + 课程/班级/任课教师/学期名），PDF 导出与打印预览共用。
+    // 教学班字段已含教师时不再拉课表；确实缺失时只看缓存里的教师信息（review R18）。
     const loadRosterReport = async (s, term, kcdm, skbjdm) => {
-      const [data, schedule, classes, terms] = await mapWithConcurrency([
+      const [data, classes, terms] = await mapWithConcurrency([
         () => cache(`roster:${JSON.stringify([term, kcdm, skbjdm])}`, () => getRoster(s, term, kcdm, skbjdm)),
-        () => cache(`schedule:${term}`, () => getSchedule(s, term)).catch(() => ({})),
-        () => cache(`progressClasses:${term}`, () => getProgressClasses(s, term)).catch(() => ({})),
-        () => cache('terms', () => getTerms(s)).catch(() => []),
+        // 教学班/学期名只是页眉元数据，失败不阻塞名单（review R18）
+        () => loadProgressClasses(ctx, s, term).catch(() => ({ items: [] })),
+        () => loadTerms(ctx, s).catch(() => []),
       ], fetchConcurrency(), (load) => load());
       const match = (classes.items ?? []).find((item) => item.params?.kcdm === kcdm && item.classCode === skbjdm);
       const jsxm = match?.params?.jsxm || '';
+      const teacherName = jsxm.replace(/\[[^\]]*\]/, '').trim();
+      const teacherCode = jsxm.match(/\[([^\]]+)\]/)?.[1] || match?.params?.jsdm || '';
+      const teacher = teacherName ? '' : peekScheduleTeacher(ctx, term);
       return {
         items: data.items ?? [],
         courseName: match?.courseRaw || '',
         className: match?.className || '',
-        teacherName: jsxm.replace(/\[[^\]]*\]/, '').trim(),
-        teacher: schedule.teacher || '',
+        teacherCode,
+        teacherName,
+        teacher,
         termLabel: terms.find((item) => item.value === term)?.label || '',
       };
     };
 
     if (url.pathname === '/api/session' && req.method === 'GET') {
-      const alive = await sessionAlive(ctx);
+      const alive = await withPriority('high', () => sessionAlive(ctx));
       return json(res, 200, { loggedIn: alive, username: alive && ctx.session ? ctx.session.username : '' });
     }
 
@@ -334,7 +325,6 @@ const server = createServer(async (req, res) => {
           ctx.session = flowSession;
           rotateContext(ctx, res);
           persistSession(ctx);
-          clearCache(ctx);
         }
       }
       return json(res, 200, { status, message, username });
@@ -347,7 +337,7 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === '/api/terms' && req.method === 'GET') {
       const s = await ensureSession(ctx);
-      const terms = await cache('terms', () => getTerms(s));
+      const terms = await loadTerms(ctx, s, refreshRequested);
       return json(res, 200, { terms, current: terms[0]?.value || '' });
     }
 
@@ -355,7 +345,25 @@ const server = createServer(async (req, res) => {
       const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cache(`schedule:${term}`, () => getSchedule(s, term));
+      const data = await loadScheduleView(ctx, s, term, { all: true, force: refreshRequested, requireAll: true });
+      return json(res, 200, data);
+    }
+
+    // 分段课表：优先当前周 ±1，返回 loadedWeeks / pendingWeeks / failedWeeks；
+    // prefetch=1 表示后台补齐，用低优先级，把额度让给用户正在看的内容（review R02/R04）。
+    if (url.pathname === '/api/schedule/partial' && req.method === 'GET') {
+      const s = await ensureSession(ctx);
+      const term = url.searchParams.get('term') || '';
+      if (!term) return json(res, 400, { error: '缺少 term 参数' });
+      const weeksParam = url.searchParams.get('weeks') || '';
+      const weeks = weeksParam
+        .split(',')
+        .map((value) => Number(value.trim()))
+        .filter((week) => Number.isInteger(week) && week >= 1 && week <= 60)
+        .slice(0, 60);
+      const prefetch = url.searchParams.get('prefetch') === '1';
+      const data = await withPriority(prefetch ? 'low' : 'normal', () =>
+        loadScheduleView(ctx, s, term, { weeks, force: refreshRequested }));
       return json(res, 200, data);
     }
 
@@ -373,7 +381,8 @@ const server = createServer(async (req, res) => {
       const kcdm = url.searchParams.get('kcdm') || '';
       const skbjdm = url.searchParams.get('skbjdm') || '';
       if (!term || !kcdm) return json(res, 400, { error: '缺少 term / kcdm 参数' });
-      const data = await getProgressCopyTerms(s, term, kcdm, skbjdm);
+      const key = `progressCopyTerms:${JSON.stringify([term, kcdm, skbjdm])}`;
+      const data = await cache(key, () => getProgressCopyTerms(s, term, kcdm, skbjdm));
       return json(res, 200, data);
     }
 
@@ -384,7 +393,8 @@ const server = createServer(async (req, res) => {
       const skbjdm = url.searchParams.get('skbjdm') || '';
       const xnxq = url.searchParams.get('xnxq') || '';
       if (!term || !kcdm || !xnxq) return json(res, 400, { error: '缺少 term / kcdm / xnxq 参数' });
-      const data = await getProgressCopyClasses(s, term, kcdm, skbjdm, xnxq);
+      const key = `progressCopyClasses:${JSON.stringify([term, kcdm, skbjdm, xnxq])}`;
+      const data = await cache(key, () => getProgressCopyClasses(s, term, kcdm, skbjdm, xnxq));
       return json(res, 200, data);
     }
 
@@ -402,7 +412,7 @@ const server = createServer(async (req, res) => {
       const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cache(`progressClasses:${term}`, () => getProgressClasses(s, term));
+      const data = await loadProgressClasses(ctx, s, term, refreshRequested);
       return json(res, 200, data);
     }
 
@@ -425,7 +435,7 @@ const server = createServer(async (req, res) => {
         ldxs: url.searchParams.get('ldxs') || '0',
         qtxs: url.searchParams.get('qtxs') || '0',
       };
-      const data = await getProgressEntry(s, term, params);
+      const data = await loadProgressEntry(ctx, s, term, params, { force: refreshRequested });
       return json(res, 200, data);
     }
 
@@ -445,7 +455,10 @@ const server = createServer(async (req, res) => {
         });
       }
       const result = await saveProgressEntry(s, body.term, body.meta, body.rows, body.formFields || {}, body.tjflag || '1', body.xqskzs || '');
-      clearCache(ctx);
+      // 只在没有明确失败信号时做定向失效：进度汇总/明细/导出，保留课表、教学任务、成绩等无关缓存（review R05）
+      const businessStatus = result?.data ? String(result.data.status ?? '') : '';
+      const failed = Boolean(result?.data) && Boolean(businessStatus) && businessStatus !== '200';
+      if (!failed) invalidateProgressAfterSave(ctx, body.term);
       return json(res, 200, result);
     }
 
@@ -475,7 +488,7 @@ const server = createServer(async (req, res) => {
       const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cache(`progressSummary:${term}`, () => getProgressSummary(s, term));
+      const data = await loadProgressSummary(ctx, s, term, refreshRequested);
       return json(res, 200, data);
     }
 
@@ -488,7 +501,7 @@ const server = createServer(async (req, res) => {
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
       let rows;
       if (kcdm && skbjdm) {
-        const entry = await getProgressEntry(s, term, {
+        const entry = await loadProgressEntry(ctx, s, term, {
           kcdm,
           bjdm: skbjdm,
           kcmc: '',
@@ -523,7 +536,7 @@ const server = createServer(async (req, res) => {
       const s = await ensureSession(ctx);
       const term = url.searchParams.get('term') || '';
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
-      const data = await cache(`progressClasses:${term}`, () => getProgressClasses(s, term));
+      const data = await loadProgressClasses(ctx, s, term);
       return json(res, 200, {
         items: (data.items ?? []).map((item) => ({
           kcdm: item.params.kcdm,
@@ -641,7 +654,9 @@ const server = createServer(async (req, res) => {
       if (!term) return json(res, 400, { error: '缺少 term 参数' });
       const params = courseGradeParams(url, term);
       if (!params.kcdm || !params.bjdm) return json(res, 400, { error: '缺少 kcdm / bjdm 参数' });
-      const data = await getCourseGradesReport(s, params);
+      // 展开成绩明细：按参数缓存在会话内，近期再展开同一班级不再回源（review R17 同类等待）
+      const key = `courseGrades:${JSON.stringify([term, params.kcdm, params.bjdm, params.flag, params.dyfs, params.qmzhC])}`;
+      const data = await cache(key, () => getCourseGradesReport(s, params));
       return json(res, 200, data);
     }
 
@@ -678,12 +693,31 @@ const server = createServer(async (req, res) => {
     if (error?.status === 401 && ctx) dropContext(ctx);
     json(res, status, { error: error instanceof Error ? error.message : 'internal error' });
   }
+}
+
+const server = createServer((req, res) => {
+  const scope = createScope({ label: req.method || 'GET' });
+  let logged = false;
+  const finish = () => {
+    if (logged) return;
+    logged = true;
+    logScope(scope, res.statusCode);
+  };
+  res.on('finish', finish);
+  res.on('close', finish);
+  runWithScope(scope, () => handleRequest(req, res, scope)).catch((error) => {
+    console.error('[api]', error);
+    if (!res.headersSent) json(res, 500, { error: 'internal error' });
+    else if (!res.destroyed) res.destroy(error);
+  });
 });
 
 server.listen(config.port, process.env.HOST || '127.0.0.1', () => {
   console.log(`[api] http://${process.env.HOST || '127.0.0.1'}:${config.port}`);
   sweepSessions();
   setInterval(sweepSessions, 60 * 60 * 1000).unref();
+  // 过期缓存主动释放（review R07）：TTL 不再只决定命中，也决定回收。
+  setInterval(() => sweepAllCaches(), 5 * 60 * 1000).unref();
 });
 
 server.on('error', (error) => {

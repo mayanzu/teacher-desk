@@ -172,7 +172,7 @@ async function componentModule(file) {
       b.onResolve({ filter: /^react(?:\/jsx-runtime)?$/ }, (args) => ({ path: args.path, namespace: 'review' }));
       b.onResolve({ filter: /(?:^|\/)api$/ }, () => ({ path: 'api', namespace: 'review' }));
       b.onLoad({ filter: /.*/, namespace: 'review' }, ({ path }) => ({ contents: path === 'api'
-        ? `export const clearApiCache = () => {}; export const preloadTerm = () => () => {}; export const readApiCache = (...args) => globalThis.__reviewCache?.(...args); export class ApiError extends Error { constructor(message, status) { super(message); this.name = 'ApiError'; this.status = status; } } export const api = new Proxy({}, {get: (_, key) => (...args) => globalThis.__reviewApi[key](...args)}); export const isUnauthorized = e => e.status === 401; export const errorMessage = e => e.message; export const isUnimplemented = e => e.status === 501;`
+        ? `export const clearApiCache = () => {}; export const preloadTerm = () => () => {}; export const readApiCache = (...args) => globalThis.__reviewCache?.(...args); export const readApiCacheEntry = (...args) => globalThis.__reviewCacheEntry?.(...args); export class ApiError extends Error { constructor(message, status) { super(message); this.name = 'ApiError'; this.status = status; } } export const api = new Proxy({}, {get: (_, key) => (...args) => globalThis.__reviewApi[key](...args)}); export const isUnauthorized = e => e.status === 401; export const errorMessage = e => e.message; export const isUnimplemented = e => e.status === 501;`
         : path === 'react/jsx-runtime'
         ? `export const Fragment = 'fragment'; export const jsx = (type, props) => ({type, props}); export const jsxs = jsx;`
         : `export const memo = fn => fn; export const useState = v => globalThis.__reviewHooks.state(v); export const useRef = v => globalThis.__reviewHooks.ref(v); export const useEffect = (fn, deps) => globalThis.__reviewHooks.effect(fn,deps); export const useCallback = (fn,deps) => globalThis.__reviewHooks.memo(fn,deps); export const useMemo = (fn,deps) => globalThis.__reviewHooks.memoValue(fn,deps);` }));
@@ -219,9 +219,10 @@ test('late class A response cannot overwrite class B or its submitted identity',
     view.render(); await tick(); let tree = view.render();
     nodes(tree, n => n.props?.className?.startsWith('entry-class ' ) || n.props?.className === 'entry-class')[0].props.onClick();
     tree = view.render(); nodes(tree, n => n.props?.className?.startsWith('entry-class ') || n.props?.className === 'entry-class')[1].props.onClick();
-    b.resolve({ meta: { classId: 'B' }, rows: [{ week: '1', content: 'B内容', hours: '2' }] }); await tick(); view.render();
-    a.resolve({ meta: { classId: 'A' }, rows: [{ week: '1', content: 'A内容', hours: '2' }] }); await tick(); tree = view.render();
-    assert.equal(nodes(tree, n => n.type === 'textarea')[0].props.value, 'B内容');
+    b.resolve({ meta: { classId: 'B' }, rows: [{ week: '1', content: 'B内容', hours: '2', subId: 'b1' }] }); await tick(); view.render();
+    a.resolve({ meta: { classId: 'A' }, rows: [{ week: '1', content: 'A内容', hours: '2', subId: 'a1' }] }); await tick(); tree = view.render();
+    // 行已抽成 memo 组件（review R14）：从行组件的 props 读取当前内容
+    assert.equal(nodes(tree, n => n.props?.row && typeof n.props.onUpdate === 'function')[0].props.row.content, 'B内容');
     nodes(tree, n => n.type === 'button' && String(n.props.children).includes('提交到教务系统'))[0].props.onClick(); await tick();
     assert.equal(submitted.meta.classId, 'B');
   } finally { view.unmount(); globalThis.window = oldWindow; }
@@ -250,7 +251,7 @@ test('term retry issues a fresh request', async () => {
     calls++; if (calls === 1) throw new Error('offline'); return { terms: [{ value: '2026,0', label: '第一学期' }], current: '2026,0' };
   }};
   const oldWindow = globalThis.window;
-  globalThis.window = { setInterval: () => 0, clearInterval: () => {} };
+  globalThis.window = { setInterval: () => 0, clearInterval: () => {}, setTimeout: () => 0, clearTimeout: () => {} };
   const view = harness(App, {});
   try {
     view.render(); await tick(); view.render(); await tick();
@@ -514,4 +515,84 @@ test('cached tabs render data on their first frame without a loading spinner', a
       await tick();
     }
   } finally { globalThis.__reviewCache = oldCache; globalThis.__reviewApi = oldApi; }
+});
+
+test('课表刷新只作用于当前学期：普通切学期不携带 refresh=1（R19）', async () => {
+  const { WeekSchedule } = await componentModule('web/src/components/WeekSchedule.tsx');
+  const calls = [];
+  const payload = {
+    courses: [], totalWeeks: 20, maxWeek: 0, loadedWeeks: [1], pendingWeeks: [], failedWeeks: [],
+    complete: true, semesterStart: '2026-09-07', xn: 2026, xq: 0, teacher: '',
+  };
+  globalThis.__reviewApi = {
+    schedulePartial: async (term, options = {}) => { calls.push({ term, options }); return payload; },
+  };
+  globalThis.__reviewCache = () => undefined;
+  globalThis.__reviewCacheEntry = () => undefined;
+  const oldWindow = globalThis.window;
+  globalThis.window = {
+    setInterval: () => 0, clearInterval: () => {}, setTimeout: () => 0, clearTimeout: () => {},
+    addEventListener() {}, removeEventListener() {},
+  };
+  const props = { term: '2026,0', userId: 't', onUnauthorized: () => {} };
+  const view = harness(WeekSchedule, props);
+  try {
+    view.render(); await tick(); let tree = view.render();
+    assert.equal(calls.length, 1);
+    assert.ok(!calls[0].options.refresh, '首次加载不强制回源');
+
+    // 课表为空 → EmptyState 的“重新加载”是显式刷新动作
+    const empty = nodes(tree, (n) => n.props?.title === '本学期还没有课表数据')[0];
+    assert.ok(empty, '空课表应显示空状态');
+    empty.props.action.props.onClick();
+    await tick(); view.render(); await tick();
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].options.refresh, true, '主动重试必须真的回源');
+
+    // 普通切学期：不能被历史重试带着一直 refresh
+    props.term = '2026,1';
+    view.render(); await tick(); view.render();
+    assert.equal(calls.length, 3);
+    assert.ok(!calls[2].options.refresh, '普通切学期遵循缓存策略');
+  } finally { view.unmount(); globalThis.window = oldWindow; }
+});
+
+test('刷新失败不隐藏已显示数据，只给非阻塞提示（R06）', async () => {
+  const { ModulePage } = await componentModule('web/src/components/ModulePage.tsx');
+  let fail = false;
+  globalThis.__reviewApi = {
+    feature: async () => {
+      if (fail) throw Object.assign(new Error('offline'), { status: 503 });
+      return { items: [{ courseName: '数据结构', courseCode: 'CS101' }] };
+    },
+    rosterClasses: async () => ({ items: [] }),
+  };
+  globalThis.__reviewCache = () => undefined;
+  globalThis.__reviewCacheEntry = () => undefined;
+  const oldWindow = globalThis.window;
+  globalThis.window = {
+    setInterval: () => 0, clearInterval: () => {}, setTimeout: () => 0, clearTimeout: () => {},
+    addEventListener() {}, removeEventListener() {},
+  };
+  const view = harness(ModulePage, { module: 'tasks', term: '2026,0', onUnauthorized: () => {} });
+  try {
+    let tree = view.render();
+    // ModulePage 把实际内容交给子组件（与 cached tabs 测试一致）
+    const child = harness(tree.type, tree.props);
+    tree = child.render(); await tick(); tree = child.render();
+    assert.ok(nodes(tree, (n) => n.type === 'table').length > 0, '首次加载显示表格');
+
+    fail = true;
+    nodes(tree, (n) => n.type === 'button' && String(n.props.children).includes('刷新'))[0].props.onClick();
+    child.render();       // token 变化触发刷新 effect
+    await tick();         // 等失败的请求落到 catch
+    tree = child.render();
+    assert.equal(nodes(tree, (n) => n.type?.name === 'ErrorState').length, 0, '不应变成整页错误');
+    assert.ok(nodes(tree, (n) => n.type === 'table').length > 0, '旧数据仍在');
+    assert.ok(
+      nodes(tree, (n) => JSON.stringify(n.props?.children)?.includes('刷新失败')).length > 0,
+      '应显示刷新失败提示',
+    );
+    child.unmount();
+  } finally { view.unmount(); globalThis.window = oldWindow; }
 });

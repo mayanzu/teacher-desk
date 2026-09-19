@@ -10,7 +10,7 @@
     "lint": "eslint server tools tests",
     "verify": "npm run lint && npm run typecheck && npm test && npm run build",
     "dev:web": "npm --prefix web run dev",
-    "build": "npm --prefix web run build",
+    "build": "npm --prefix web run build && node tools/precompress.mjs",
     "build:web": "npm --prefix web run build",
     "typecheck": "npm --prefix web run typecheck",
     "docker:build": "docker buildx build --platform linux/arm64 -t teacher-desk:latest --load .",

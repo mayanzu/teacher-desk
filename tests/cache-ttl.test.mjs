@@ -12,6 +12,7 @@ test('学期列表缓存 12 小时（一学期都不会变）', () => {
 
 test('课表与教学任务缓存 30 分钟', () => {
   assert.equal(cacheTtlFor('schedule:2026,0'), 30 * MINUTE);
+  assert.equal(cacheTtlFor('scheduleWeek:2026,0:3'), 30 * MINUTE);
   assert.equal(cacheTtlFor('tasks:2026,0'), 30 * MINUTE);
 });
 

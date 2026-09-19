@@ -20,8 +20,8 @@ export const DEFAULT_CACHE_TTL_MS =
 const TTL_TIERS = [
   // 学期列表：一学期都不会变
   [/^terms$/, 12 * HOUR],
-  // 课表 / 教学任务：偶有调课，半小时足够
-  [/^(schedule|tasks):/, 30 * MINUTE],
+  // 课表 / 教学任务：偶有调课，半小时足够；课表按周缓存（scheduleWeek:term:week）
+  [/^(scheduleWeek|schedule|tasks):/, 30 * MINUTE],
   // 成绩：录入后基本不动
   [/^(grades|courseGradeClasses|courseGrades):/, 30 * MINUTE],
   // 点名册 / 教学班名单：学生名单偶尔调整（注意 /api/roster/classes 复用进度页的 progressClasses 键，走 5 分钟档）

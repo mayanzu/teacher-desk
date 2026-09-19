@@ -24,6 +24,11 @@ export interface ScheduleData {
   totalWeeks: number;
   semesterStart?: string;
   times?: Record<string, [string, string]>;
+  // 分段加载元数据（review R02）：区分「未加载」和「没有课」
+  loadedWeeks?: number[];
+  pendingWeeks?: number[];
+  failedWeeks?: { week: number; message: string }[];
+  complete?: boolean;
 }
 
 export interface CourseInstance {

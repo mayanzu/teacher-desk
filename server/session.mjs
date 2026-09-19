@@ -1,4 +1,6 @@
 import { config } from './config.mjs';
+import { scheduleRequest } from './jwxt/scheduler.mjs';
+import { addCount, addTiming, currentScope } from './perf.mjs';
 
 function decode(buffer, headers) {
   const contentType = (headers.get('content-type') || '').toLowerCase();
@@ -8,6 +10,15 @@ function decode(buffer, headers) {
   } catch {
     return buffer.toString('utf8');
   }
+}
+
+function requestTimeoutMs() {
+  const raw = Number(process.env.JWXT_REQUEST_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 30000;
+}
+
+function abortLike(error) {
+  return error?.name === 'AbortError' || error?.name === 'TimeoutError';
 }
 
 export class JwxtSession {
@@ -50,6 +61,10 @@ export class JwxtSession {
     }
   }
 
+  /**
+   * 实际的上游 fetch。调度器在这里生效（同一会话 + 同一教务源全局上限 + 优先级），
+   * 额度覆盖到响应体读完，避免收到响应头就释放。
+   */
   async request(path, init = {}) {
     const url = this.resolve(path);
     const headers = {
@@ -58,19 +73,34 @@ export class JwxtSession {
       ...(init.headers || {}),
     };
     if (this.cookies.size) headers.Cookie = this.cookieHeader();
-    let response;
-    try {
-      response = await fetch(url, { ...init, signal: init.signal || AbortSignal.timeout(30000), headers, redirect: init.redirect || 'manual' });
-    } catch {
-      throw Object.assign(new Error('教务系统暂时无法连接，请稍后重试'), { status: 503 });
-    }
-    if (!response.ok) {
-      const auth = response.status === 401 || /cas\/login/i.test(response.headers.get('location') || '');
-      throw Object.assign(new Error(auth ? '登录已过期，请重新扫码' : `教务系统响应异常（HTTP ${response.status}）`), { status: auth ? 401 : 502 });
-    }
-    this.storeCookies(response);
-    const buffer = Buffer.from(await response.arrayBuffer());
-    return { response, url, buffer };
+    const { priority, referer, ...fetchInit } = init;
+    void referer;
+    const scope = currentScope();
+    const externalSignal = init.signal || scope?.signal || null;
+    return scheduleRequest(this, async () => {
+      const signal = externalSignal || AbortSignal.timeout(requestTimeoutMs());
+      const startedAt = performance.now();
+      let response;
+      try {
+        response = await fetch(url, { ...fetchInit, signal, headers, redirect: fetchInit.redirect || 'manual' });
+      } catch (error) {
+        if (abortLike(error)) {
+          if (externalSignal?.aborted) throw Object.assign(new Error('请求已取消'), { status: 499, name: 'AbortError' });
+          throw Object.assign(new Error('教务系统响应超时，请稍后重试'), { status: 504 });
+        }
+        throw Object.assign(new Error('教务系统暂时无法连接，请稍后重试'), { status: 503 });
+      }
+      addTiming('upstream', performance.now() - startedAt);
+      addCount('upstreamRequests');
+      if (!response.ok) {
+        const auth = response.status === 401 || /cas\/login/i.test(response.headers.get('location') || '');
+        throw Object.assign(new Error(auth ? '登录已过期，请重新扫码' : `教务系统响应异常（HTTP ${response.status}）`), { status: auth ? 401 : 502 });
+      }
+      this.storeCookies(response);
+      const buffer = Buffer.from(await response.arrayBuffer());
+      addCount('upstreamBytes', buffer.length);
+      return { response, url, buffer };
+    }, { priority, signal: externalSignal });
   }
 
   async text(path, init = {}) {

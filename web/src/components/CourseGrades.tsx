@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, readApiCache, errorMessage, isUnauthorized } from '../api';
-import { downloadFile } from '../lib/download';
+import { downloadFile, type DownloadPhase } from '../lib/download';
+import { useRefreshRequest, useRefreshConsumer } from '../lib/useRefreshRequest';
 import { ExportButton } from './ExportButton';
 import { EmptyState, ErrorState, LoadingState } from './StateViews';
 import type { CourseGradeClassesData, CourseGradeClass, CourseGradesData } from '../types';
@@ -25,23 +26,30 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
   const [classes, setClasses] = useState<CourseGradeClass[]>(cached?.items ?? []);
   const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [report, setReport] = useState<CourseGradesData | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState('');
-  const [attempt, setAttempt] = useState(0);
+  const [reportWarning, setReportWarning] = useState('');
+  const { token: refreshToken, requestRefresh } = useRefreshRequest(`grades:${term}`);
+  const { forceFor } = useRefreshConsumer();
+  const { forceFor: forceForReport } = useRefreshConsumer();
   const [downloadError, setDownloadError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
+    const force = forceFor(refreshToken);
     const snapshot = readApiCache<CourseGradeClassesData>('course-grades/classes', term);
     setLoading(!snapshot);
     setError('');
-    setClasses(snapshot?.items ?? []);
+    setWarning('');
+    // 有缓存快照才覆盖；刷新失败时保留已显示的列表（review R06）
+    if (snapshot) setClasses(snapshot.items ?? []);
     setExpanded(null);
     setReport(null);
     api
-      .courseGradeClasses(term, { refresh: attempt > 0 })
+      .courseGradeClasses(term, { refresh: force })
       .then((data) => {
         if (cancelled) return;
         setClasses(data.items ?? []);
@@ -52,7 +60,8 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
           onUnauthorized();
           return;
         }
-        setError(errorMessage(err));
+        if (snapshot || classes.length) setWarning(`刷新失败（${errorMessage(err)}），正在显示上一次加载的数据。`);
+        else setError(errorMessage(err));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -60,7 +69,7 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
     return () => {
       cancelled = true;
     };
-  }, [term, attempt, onUnauthorized]);
+  }, [term, refreshToken, onUnauthorized, forceFor]);
 
   // 按课程名前的课程代码分组（同一门课的多个行政班级归到一组）
   const groups = useMemo<CourseGroup[]>(() => {
@@ -93,15 +102,18 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
   useEffect(() => {
     if (!expandedItem) {
       setReport(null);
+      setReportWarning('');
       return;
     }
     let cancelled = false;
+    const force = forceForReport(refreshToken);
     const snapshot = readApiCache<CourseGradesData>('course-grades', term, {
       kcdm: expandedItem.kcdm, bjdm: expandedItem.bjdm, bjmc: expandedItem.className,
       flag: '1', dyfs: 'dl', qmzhC: 'zhC',
     });
     setReportLoading(!snapshot);
     setReportError('');
+    setReportWarning('');
     setReport(snapshot ?? null);
     api
       .courseGrades(
@@ -114,7 +126,7 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
           dyfs: 'dl',
           qmzhC: 'zhC',
         },
-        {},
+        { refresh: force },
       )
       .then((data) => {
         if (!cancelled) setReport(data);
@@ -125,7 +137,9 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
           onUnauthorized();
           return;
         }
-        setReportError(errorMessage(err));
+        // 已有明细时保留内容，只提示刷新失败（review R06）
+        if (snapshot) setReportWarning(`刷新失败（${errorMessage(err)}），正在显示上一次加载的成绩明细。`);
+        else setReportError(errorMessage(err));
       })
       .finally(() => {
         if (!cancelled) setReportLoading(false);
@@ -133,7 +147,7 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
     return () => {
       cancelled = true;
     };
-  }, [term, expandedItem, attempt, onUnauthorized]);
+  }, [term, expandedItem, refreshToken, onUnauthorized, forceForReport]);
 
   const pdfUrl = (item: CourseGradeClass) =>
     api.courseGradesPdfUrl(term, {
@@ -147,7 +161,16 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
       className: item.className,
       fileName: `${item.courseName}_${item.className}_原始成绩`,
       title: '分课程按行政班级查看成绩',
+      // 如果刚看过该班明细，把教师名带上，服务端不用再为文件名查一次（review R08）
+      teacher: reportTeacher(item),
     });
+
+  function reportTeacher(item: CourseGradeClass): string {
+    if (!report || expanded !== `${item.kcdm}|${item.bjdm}`) return '';
+    const cell = report.meta.find((text) => text.startsWith('任课教师'));
+    if (!cell) return '';
+    return cell.replace(/^任课教师[:：]\s*/, '').replace(/^\[[^\]]*\]\s*/, '').trim();
+  }
 
   if (loading) {
     return (
@@ -160,15 +183,15 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
   if (error) {
     return (
       <div className="panel-card">
-        <ErrorState title="课程成绩加载失败" message={error} onRetry={() => setAttempt((value) => value + 1)} />
+        <ErrorState title="课程成绩加载失败" message={error} onRetry={requestRefresh} />
       </div>
     );
   }
 
-  const download = async (url: string, name: string) => {
+  const download = async (url: string, name: string, onPhase?: (phase: DownloadPhase) => void) => {
     setDownloadError('');
     try {
-      await downloadFile(url, name);
+      await downloadFile(url, name, { onPhase });
     } catch (err) {
       if (isUnauthorized(err)) {
         onUnauthorized();
@@ -180,6 +203,15 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
 
   return (
     <div className="panel-card">
+      {warning && (
+        <p className="notice-bar is-warn" role="status">
+          <b>注意</b>
+          {warning}
+          <button className="kbtn ghost" type="button" onClick={requestRefresh}>
+            重试
+          </button>
+        </p>
+      )}
       {downloadError && (
         <p className="notice-bar is-warn" role="alert">
           {downloadError}
@@ -231,16 +263,23 @@ export function CourseGrades({ term, onUnauthorized }: CourseGradesProps) {
                           <ExportButton
                             className="kbtn primary grade-view"
                             label="导出 PDF"
-                            onExport={() => download(pdfUrl(item), `${item.courseName}_${item.className}_原始成绩.pdf`)}
+                            pendingLabel="正在生成 PDF…"
+                            onExport={(report) => download(pdfUrl(item), `${item.courseName}_${item.className}_原始成绩.pdf`, report)}
                           />
                         </div>
                       </div>
 
                       {open && (
                         <div className="cg-grade">
+                          {reportWarning && (
+                            <p className="notice-bar is-warn" role="status">
+                              <b>注意</b>
+                              {reportWarning}
+                            </p>
+                          )}
                           {reportLoading && <LoadingState message="正在拉取成绩明细…" />}
                           {!reportLoading && reportError && (
-                            <ErrorState title="成绩明细加载失败" message={reportError} />
+                            <ErrorState title="成绩明细加载失败" message={reportError} onRetry={requestRefresh} />
                           )}
                           {!reportLoading && !reportError && report && (
                             <>

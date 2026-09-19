@@ -1,5 +1,5 @@
-import { memo, useEffect, useMemo, useState } from 'react';
-import { api, readApiCache, errorMessage, isUnauthorized } from '../api';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { api, readApiCache, readApiCacheEntry, errorMessage, isUnauthorized } from '../api';
 import { CalendarDays, ChevronLeft, ChevronRight, MapPin, Users } from './Icons';
 import { CourseDialog } from './CourseDialog';
 import { HeroSection } from './HeroSection';
@@ -24,6 +24,8 @@ import {
   type ScheduleTimes,
 } from '../lib/schedule';
 import { useNow } from '../lib/useNow';
+import { QUERY_TTL_MS } from '../lib/queryCache';
+import { useRefreshRequest, useRefreshConsumer } from '../lib/useRefreshRequest';
 import type { Course, ScheduleData } from '../types';
 
 interface WeekScheduleProps {
@@ -84,50 +86,95 @@ const LessonCard = memo(function LessonCard({ course, start, end, phase, extraCo
 });
 
 export function WeekSchedule({ term, userId, onUnauthorized }: WeekScheduleProps) {
-  const cached = readApiCache<ScheduleData>('schedule', term);
-  const [data, setData] = useState<ScheduleData | null>(cached ?? null);
-  const [loadedTerm, setLoadedTerm] = useState(cached ? term : '');
-  const [loading, setLoading] = useState(!cached);
+  const initial =
+    readApiCache<ScheduleData>('schedule', term) ?? readApiCache<ScheduleData>('schedule/partial', term) ?? null;
+  const [data, setData] = useState<ScheduleData | null>(initial);
+  const [loadedTerm, setLoadedTerm] = useState(initial ? term : '');
+  const [loading, setLoading] = useState(!initial);
   const [error, setError] = useState('');
-  const [attempt, setAttempt] = useState(0);
-  const [viewWeek, setViewWeek] = useState(() => currentWeekFrom(parseSemesterStart(cached?.semesterStart) ?? termStart(term), cached?.totalWeeks || cached?.maxWeek || 20) ?? 1);
+  const [warning, setWarning] = useState('');
+  const [viewWeek, setViewWeek] = useState(() => currentWeekFrom(parseSemesterStart(initial?.semesterStart) ?? termStart(term), initial?.totalWeeks || initial?.maxWeek || 20) ?? 1);
   const [selected, setSelected] = useState<Course[] | null>(null);
   const now = useNow(30000);
+  const { token: refreshToken, requestRefresh } = useRefreshRequest(term);
+  const { forceFor } = useRefreshConsumer();
+  const appliedTerm = useRef('');
 
   useEffect(() => {
     let cancelled = false;
-    const snapshot = readApiCache<ScheduleData>('schedule', term);
-    setLoading(!snapshot);
-    setData(snapshot ?? null);
-    setLoadedTerm(snapshot ? term : '');
-    setError('');
-    setSelected(null);
-    api
-      .schedule(term, { refresh: attempt > 0 })
-      .then((payload) => {
-        if (cancelled) return;
-        setData(payload);
-        setLoadedTerm(term);
+    const force = forceFor(refreshToken);
+    const fullEntry = readApiCacheEntry<ScheduleData>('schedule', term);
+    const partialEntry = readApiCacheEntry<ScheduleData>('schedule/partial', term);
+    const snapshot = fullEntry?.value ?? partialEntry?.value ?? null;
+    const freshFull = Boolean(fullEntry && Date.now() - fullEntry.at < QUERY_TTL_MS);
+    const freshPartial = Boolean(
+      partialEntry && Date.now() - partialEntry.at < QUERY_TTL_MS && (partialEntry.value.pendingWeeks?.length ?? 0) === 0,
+    );
+
+    const apply = (payload: ScheduleData) => {
+      setData(payload);
+      setLoadedTerm(term);
+      if (appliedTerm.current !== term) {
+        appliedTerm.current = term;
         const total = payload.totalWeeks || payload.maxWeek || 20;
         const start = parseSemesterStart(payload.semesterStart) ?? termStart(term);
         setViewWeek(currentWeekFrom(start, total) ?? 1);
-      })
-      .catch((err: unknown) => {
+      }
+    };
+
+    const sameTerm = appliedTerm.current === term;
+    if (snapshot) {
+      apply(snapshot);
+      setLoading(false);
+    } else if (!sameTerm) {
+      // 切到没有缓存的学期：清掉旧学期数据，避免串味
+      setData(null);
+      setLoadedTerm('');
+      setLoading(true);
+    }
+    setSelected(null);
+    setError('');
+    setWarning('');
+    if (!force && (freshFull || freshPartial)) {
+      // 新鲜缓存：0 个网络请求（review R06 验收）
+      return () => { cancelled = true; };
+    }
+
+    void (async () => {
+      try {
+        // 1) 快速路径：当前周 ±1，先让首屏可用
+        const first = await api.schedulePartial(term, { refresh: force });
+        if (cancelled) return;
+        apply(first);
+        setLoading(false);
+        // 2) 后台补齐其余周次（低优先级），补齐失败只提示、不隐藏已显示内容
+        const pending = first.pendingWeeks ?? [];
+        if (pending.length) {
+          try {
+            const rest = await api.schedulePartial(term, { weeks: pending, prefetch: true });
+            if (!cancelled) apply(rest);
+          } catch (err) {
+            if (!cancelled && !isUnauthorized(err)) {
+              setWarning(`其余周次暂未加载完（${errorMessage(err)}），当前显示的是已加载部分。`);
+            }
+          }
+        }
+      } catch (err) {
         if (cancelled) return;
         if (isUnauthorized(err)) {
           onUnauthorized();
           return;
         }
-        setData(null);
-        setError(errorMessage(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+        setLoading(false);
+        if (snapshot || data) setWarning(`刷新失败（${errorMessage(err)}），正在显示缓存内容。`);
+        else setError(errorMessage(err));
+      }
+    })();
+
     return () => {
       cancelled = true;
     };
-  }, [term, attempt, onUnauthorized]);
+  }, [term, refreshToken, onUnauthorized, forceFor]);
 
   const courses = data?.courses ?? [];
   const times: ScheduleTimes | null = data?.times ?? null;
@@ -135,6 +182,8 @@ export function WeekSchedule({ term, userId, onUnauthorized }: WeekScheduleProps
   const today = todayIndex(now);
   const termStartDate = parseSemesterStart(data?.semesterStart) ?? termStart(term);
   const current = currentWeekFrom(termStartDate, totalWeeks, now);
+  const pendingWeeks = data?.pendingWeeks ?? [];
+  const failedWeeks = data?.failedWeeks ?? [];
 
   const slots = useMemo(() => activeSlots(courses), [courses]);
   const days = useMemo(() => activeDays(courses), [courses]);
@@ -183,7 +232,7 @@ export function WeekSchedule({ term, userId, onUnauthorized }: WeekScheduleProps
 
   const ready = data !== null && loadedTerm === term;
 
-  if (loading || (!ready && !error)) {
+  if (loading || (!ready && !error && !warning)) {
     return (
       <section className="section" aria-busy="true">
         <div className="panel-card">
@@ -197,7 +246,7 @@ export function WeekSchedule({ term, userId, onUnauthorized }: WeekScheduleProps
     return (
       <section className="section">
         <div className="panel-card">
-          <ErrorState title="课表加载失败" message={error} onRetry={() => setAttempt((value) => value + 1)} />
+          <ErrorState title="课表加载失败" message={error} onRetry={requestRefresh} />
         </div>
       </section>
     );
@@ -205,12 +254,21 @@ export function WeekSchedule({ term, userId, onUnauthorized }: WeekScheduleProps
 
   return (
     <>
-      {(data?.calendarEstimated !== false || data?.timesEstimated !== false) && (
+      {warning && (
+        <p className="notice-bar is-warn" role="status">
+          <b>注意</b>
+          {warning}
+          <button className="kbtn ghost" type="button" onClick={requestRefresh}>
+            重试
+          </button>
+        </p>
+      )}
+      {data?.calendarEstimated !== false || data?.timesEstimated !== false ? (
         <p className="notice-bar" role="status">
           {data?.calendarEstimated !== false ? '教学周和日期按估算开学日计算，请按学校校历核对。' : '已使用配置的学校校历。'}
           {data?.timesEstimated !== false && '作息使用默认时间，开课提醒仅供参考。'}
         </p>
-      )}
+      ) : null}
       <HeroSection
         userId={userId}
         teacher={data?.teacher ?? ''}
@@ -281,14 +339,33 @@ export function WeekSchedule({ term, userId, onUnauthorized }: WeekScheduleProps
           </div>
         </div>
 
+        {pendingWeeks.length > 0 && (
+          <p className="notice-bar" role="status">
+            正在后台补齐其余 {pendingWeeks.length} 个教学周，当前显示的是已加载部分（已加载 {data?.loadedWeeks?.length ?? 0} 周）。
+          </p>
+        )}
+        {failedWeeks.length > 0 && (
+          <p className="notice-bar is-warn" role="status">
+            <b>部分周次未加载</b>
+            第 {failedWeeks.map((item) => item.week).join('、')} 周暂时读取失败，其余内容不受影响。
+            <button className="kbtn ghost" type="button" onClick={requestRefresh}>
+              重试
+            </button>
+          </p>
+        )}
+
         <div className="panel-card">
-          {courses.length === 0 && (
+          {courses.length === 0 && pendingWeeks.length > 0 && (
+            <LoadingState message={`已加载 ${data?.loadedWeeks?.length ?? 0} 周，正在读取剩余教学周…`} />
+          )}
+
+          {courses.length === 0 && pendingWeeks.length === 0 && (
             <EmptyState
               title="本学期还没有课表数据"
               message="教务系统未返回任何课程记录。"
               hint="可在顶部切换到其他学期试试，或稍后重新加载。"
               action={
-                <button className="kbtn ghost" type="button" onClick={() => setAttempt((value) => value + 1)}>
+                <button className="kbtn ghost" type="button" onClick={requestRefresh}>
                   重新加载
                 </button>
               }

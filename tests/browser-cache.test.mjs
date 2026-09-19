@@ -70,7 +70,7 @@ test('preload warms every visible tab with at most two browser requests', async 
     assert.equal(paths.length, 6);
     assert.ok(peak <= 2);
     assert.equal(unauthorized, false);
-    for (const endpoint of ['schedule', 'tasks', 'progress/classes', 'course-grades/classes', 'roster/classes', 'progress/summary']) {
+    for (const endpoint of ['schedule/partial', 'tasks', 'progress/classes', 'course-grades/classes', 'roster/classes', 'progress/summary']) {
       assert.ok(readApiCache(endpoint, '2026,0'), endpoint);
     }
     await api.feature('tasks', '2026,0');

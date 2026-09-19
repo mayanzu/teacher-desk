@@ -60,7 +60,10 @@ pickPort(Number(process.env.PORT) || 8790, (port) => {
   console.log('');
   setTimeout(() => {
     try {
-      spawn('cmd', ['/c', 'start', '', `http://127.0.0.1:${port}`], { detached: true, stdio: 'ignore' }).unref();
+      const opener = spawn('cmd', ['/c', 'start', '', `http://127.0.0.1:${port}`], { detached: true, stdio: 'ignore' });
+      // 非 Windows（或 PATH 里没有 cmd）时 spawn 会异步报 ENOENT，不接住会直接带崩服务
+      opener.on('error', () => {});
+      opener.unref();
     } catch {
       /* 打不开浏览器时忽略 */
     }

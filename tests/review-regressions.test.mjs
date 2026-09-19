@@ -31,15 +31,36 @@ test('progress retains remark, homework and requirement', () => {
 });
 
 test('both progress PDF routes complete and reject invalid downloads', async () => {
+  const bodies = [];
   const mock = {
     base: 'https://example.invalid',
-    text: async () => ({ text: JSON.stringify({ status: 200, result: 'demo;;mock-path' }) }),
+    text: async (_path, opts) => { bodies.push(opts?.body || ''); return { text: JSON.stringify({ status: 200, result: 'demo;;mock-path' }) }; },
     request: async () => ({ response: new Response('', { headers: { 'content-type': 'application/pdf' } }), buffer: Buffer.from('%PDF-1.7\nfixture') }),
   };
-  for (const scope of ['term', '']) {
-    const result = await exportProgressPdf(mock, { term: '2026,0', scope, bjdm: 'demo', courseName: '测试' });
-    assert.match(result.filename, /\.pdf$/); assert.equal(result.buffer.subarray(0, 5).toString(), '%PDF-');
-  }
+  const termResult = await exportProgressPdf(mock, { term: '2026,0', scope: 'term' });
+  assert.match(termResult.filename, /\.pdf$/); assert.equal(termResult.buffer.subarray(0, 5).toString(), '%PDF-');
+  const classResult = await exportProgressPdf(mock, {
+    term: '2026,0',
+    scope: '',
+    kcdm: '551982',
+    skbjdm: '551982-001',
+    kcmc: '[24111081]计算机程序设计及应用',
+    bjmc: '',
+    courseName: '[24111081]计算机程序设计及应用',
+    className: '示例班',
+  });
+  assert.match(classResult.filename, /\.pdf$/); assert.equal(classResult.buffer.subarray(0, 5).toString(), '%PDF-');
+  // 分课程必须与原版抓包一致：look_data10319.jsp + bjdm + returnHtml，A4 横向、左右边距 5
+  const classBody = bodies[1] || '';
+  assert.match(classBody, /look_data10319\.jsp/);
+  assert.match(classBody, /returnHtml%253D/);
+  assert.match(classBody, /menucode_current%253DT2020201/);
+  assert.match(classBody, /orientation=L/);
+  assert.match(classBody, /left=5&right=5/);
+  assert.match(classBody, /%255B24111081%255D/);
+  assert.doesNotMatch(classBody, /skbjdm/);
+  assert.doesNotMatch(classBody, /look\.jsp\?/);
+  await assert.rejects(exportProgressPdf(mock, { term: '2026,0', scope: '' }), /kcdm/);
   assert.throws(() => requireDownload({ response: new Response('<html>login</html>'), buffer: Buffer.from('<html>login</html>') }, 'pdf'), /有效文件/);
 });
 

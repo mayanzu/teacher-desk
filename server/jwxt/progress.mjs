@@ -502,7 +502,11 @@ export async function getProgressSummary(session, term) {
       const weeks = entry.rows.map((row) => Number(row.week)).filter((n) => n > 0);
       items.push({
         kcdm: item.params.kcdm,
-        skbjdm: item.classCode,
+        // 原版 look10319.jsp 用 skbjdm（上课班，如 551982-001）定位，bjdm（行政班）不可混用
+        skbjdm: item.params.skbjdm || item.classCode,
+        bjdm: item.params.bjdm || '',
+        bjmc: item.params.bjmc || '',
+        kcmc: item.params.kcmc || '',
         className: item.className,
         courseName: item.courseRaw,
         count: entry.rows.length,
@@ -580,18 +584,29 @@ export async function exportProgressPdf(session, params) {
     title = '查看学期教学进度表';
     printParams = 'pageSize=A4&orientation=L&top=0&bottom=20&left=10&right=10';
   } else {
+    // 与原版「查看教学进度表 → 导出PDF」的抓包参数保持一致：
+    // 目标页是 look_data10319.jsp（非 look.jsp / look10319.jsp），
+    // 参数为 xn/xq_m/kcdm/bjdm/bjmc/returnHtml/menucode_current，
+    // 打印参数为 A4 横向、左右边距 5。
     const kcdm = String(params.kcdm || String(params.bjdm || '').split('-')[0]);
-    const bjdm = String(params.bjdm || '');
-    const kcmc = String(params.kcmc || '');
-    pageurl = `wjstgdfw/jxap.lrjxjdb.look.jsp?xn=${xn}&xq_m=${xq}&kcdm=${kcdm}&bjdm=${bjdm}&isgly=1&kcmc=${kcmc}`;
-    title = `${params.courseName || '教学进度表'}`;
-    printParams = 'pageSize=A4&orientation=P&top=0&bottom=10&left=10&right=10';
+    const bjdm = String(params.bjdm || params.skbjdm || '');
+    if (!kcdm || !bjdm) throw Object.assign(new Error('缺少 kcdm / bjdm 参数'), { status: 400 });
+    const returnHtml = encodeURIComponent('../wjstgdfw/jxap.lrjxjdb10319.html');
+    pageurl =
+      `/wjstgdfw/jxap.lrjxjdb.look_data10319.jsp?xn=${xn}&xq_m=${xq}` +
+      `&kcdm=${encodeURIComponent(kcdm)}&bjdm=${encodeURIComponent(bjdm)}` +
+      `&bjmc=&returnHtml=${returnHtml}&menucode_current=T2020201`;
+    title = `${params.courseName || params.kcmc || '教学进度表'}`;
+    printParams = 'pageSize=A4&orientation=L&top=0&bottom=10&left=5&right=5';
   }
   const body = `pageurl=${doubleEncode(pageurl)}&${printParams}&title=${doubleEncode(title)}`;
+  const referer = all
+    ? `${session.base}/ahsljw/wjstgdfw/jxap.ckjxjdb.html?menucode=T2020203`
+    : `${session.base}/ahsljw/wjstgdfw/jxap.lrjxjdb10319.html?menucode=T2020201`;
   const res = await session.text('/ahsljw/frame/pdf?method=topdf', {
     method: 'POST',
-    referer: `${session.base}/ahsljw/wjstgdfw/jxap.ckjxjdb.html?menucode=T2020203`,
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+    referer,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest' },
     body,
   });
   let data = null;

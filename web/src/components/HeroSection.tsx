@@ -43,9 +43,10 @@ export function HeroSection({
   viewWeek,
   viewWeekCount,
 }: HeroSectionProps) {
-  // 30s 足够：这里的 today/phase/剩余天数都是「天」级别的信息，
-  // 秒级倒计时在 NextClassPanel 内部自己 tick，避免整个 Hero（含便利贴面板）每秒重渲染。
-  const now = useNow(30_000);
+  // 10s 足够：这里的 today/phase/剩余天数都是「天」级别的信息；
+  // 秒级倒计时在 NextClassPanel 内部自己 tick（它必须用自己的 ticker，否则 memo 失效）。
+  // 10s 兼顾「下课后尽快切到下一节」和「不每秒重渲染整个 Hero（含便利贴面板）」。
+  const now = useNow(10_000);
   const next = nextCourseInstance(courses, semesterStart, totalWeeks, current, times, now);
   const today = todayIndex(now);
   const phase = semesterPhase(semesterStart, totalWeeks, now);

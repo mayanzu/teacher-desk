@@ -208,7 +208,7 @@ ssh root@<router> "docker compose up -d"               # 使用仓库内 docker-
 
 运行 `npm test` 执行隔离回归测试，运行 `npm run build` 检查前端类型与生产构建，运行 `npm run lint` 对后端/工具/测试做 `no-undef` 静态检查（前端构建与 `node --check` 都发现不了未定义变量）。`npm run verify` 会依次执行 lint、typecheck、测试与构建；CI 在 Node 20 / 22 上运行同一套检查（见 `.github/workflows/ci.yml`）。测试使用合成数据与 HTML fixture，不向教务系统写入。
 
-查询结果在服务端按浏览器会话缓存，最多 200 项，并合并并发相同请求；每个缓存键按数据变化频率分层 TTL：学期列表 12 小时，课表/教学任务/成绩 30 分钟，点名册 10 分钟，其余（教学进度等）5 分钟。需要绕过缓存拿最新数据时，在任意取数接口后加 `?refresh=1`（例如 `/api/schedule?term=2026,0&refresh=1`）。匿名会话 30 分钟未活动回收，已登录会话 7 天未活动回收，内存上下文总数上限 500。`POST /api/login/start` 按来源 IP 限流（5 分钟内 10 次）。写请求校验 `Origin`：无 `Origin` 或同源（含 `localhost` 不同端口）放行。登录 Cookie 持久化到会话目录。
+查询结果在服务端按浏览器会话缓存，最多 200 项，并合并并发相同请求；每个缓存键按数据变化频率分层 TTL：学期列表 12 小时，课表/教学任务/成绩 30 分钟，点名册 10 分钟，其余（教学进度等）5 分钟。界面上每个「刷新」按钮都会带 `?refresh=1` 绕过缓存直接回源（例如 `/api/schedule?term=2026,0&refresh=1`），所以分层 TTL 不会让手动刷新的结果变旧；该参数也可以手工调用任意取数接口。上游请求默认按 `JWXT_FETCH_CONCURRENCY`（默认 3）并发拉取，「上游串行 vs 并发」的实测数字可以用 `node tools/bench-upstream-concurrency.mjs` 复跑（默认打本地假上游，加 `--base` 才打真实教务）。匿名会话 30 分钟未活动回收，已登录会话 7 天未活动回收，内存上下文总数上限 500。`POST /api/login/start` 按来源 IP 限流（5 分钟内 10 次）。写请求校验 `Origin`：无 `Origin` 或同源（含 `localhost` 不同端口）放行。登录 Cookie 持久化到会话目录。
 
 导出的 CSV 会把 `=`、`+`、`-`、`@` 开头的可疑内容转为文本，并对有前导零或超长（≥15 位）的学号使用 `="…"` 形式，避免表格软件执行公式或丢失精度。
 

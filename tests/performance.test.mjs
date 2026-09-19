@@ -44,16 +44,36 @@ test('compressed JSON download preserves every byte and reduces wire size', asyn
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
 
-test('concurrent session checks share a probe but subsequent checks revalidate', async () => {
-  let calls = 0;
-  const ctx = { session: { text: async () => { calls++; return { status: 200, text: "_loginid='teacher'" }; } } };
-  assert.deepEqual(await Promise.all([sessionAlive(ctx), sessionAlive(ctx), sessionAlive(ctx)]), [true, true, true]);
-  assert.equal(calls, 1);
-  assert.equal(await sessionAlive(ctx), true);
-  assert.equal(calls, 2);
-  const pending = sessionAlive(ctx);
-  ctx.session = null;
-  assert.equal(await pending, false);
+test('concurrent session checks share a probe; 记忆期内复用结论、关掉记忆后重新校验', async () => {
+  const before = process.env.JWXT_SESSION_PROBE_TTL_MS;
+  try {
+    // 默认（记忆 45 秒）：并发只探一次，且记忆期内不再重复探测上游
+    delete process.env.JWXT_SESSION_PROBE_TTL_MS;
+    let calls = 0;
+    const ctx = { session: { text: async () => { calls++; return { status: 200, text: "_loginid='teacher'" }; } } };
+    assert.deepEqual(await Promise.all([sessionAlive(ctx), sessionAlive(ctx), sessionAlive(ctx)]), [true, true, true]);
+    assert.equal(calls, 1, '并发探测只打一次上游');
+    assert.equal(await sessionAlive(ctx), true);
+    assert.equal(calls, 1, '记忆期内复用结论，不再探测上游');
+
+    // JWXT_SESSION_PROBE_TTL_MS=0：恢复「每次请求都重新校验」
+    process.env.JWXT_SESSION_PROBE_TTL_MS = '0';
+    assert.equal(await sessionAlive(ctx), true);
+    assert.equal(calls, 2, '关掉记忆后每次都重新校验');
+
+    // 关掉记忆时，会话在中途被清空 → 结果按最新状态判定
+    const pending = sessionAlive(ctx);
+    ctx.session = null;
+    assert.equal(await pending, false);
+
+    // 关掉记忆时，掉线仍能被发现（不因为记忆机制而漏判）
+    process.env.JWXT_SESSION_PROBE_TTL_MS = '0';
+    const expired = { session: { text: async () => ({ status: 200, text: 'kingo.guest' }) } };
+    assert.equal(await sessionAlive(expired), false);
+  } finally {
+    if (before === undefined) delete process.env.JWXT_SESSION_PROBE_TTL_MS;
+    else process.env.JWXT_SESSION_PROBE_TTL_MS = before;
+  }
 });
 
 test('failed authentication probe can be retried', async () => {

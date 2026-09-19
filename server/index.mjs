@@ -40,20 +40,25 @@ async function cached(ctx, key, fn, force = false) {
     return hit.value;
   }
   if (hit) ctx.cache.delete(key);
-  // 合并同一会话内对相同键的并发请求，避免重复打上游
-  if (ctx.inflight.has(key)) return ctx.inflight.get(key);
+  // 合并同一会话内对相同键的并发请求，避免重复打上游；
+  // 但 ?refresh=1（force）必须真的回源，不能复用刷新前就发出的那次请求。
+  if (!force && ctx.inflight.has(key)) return ctx.inflight.get(key);
   const pending = (async () => {
     try {
       const value = await fn();
-      ctx.cache.set(key, { at: Date.now(), value });
-      while (ctx.cache.size > CACHE_MAX) {
-        const oldest = ctx.cache.keys().next().value;
-        if (oldest === undefined) break;
-        ctx.cache.delete(oldest);
+      // 被 force 重发顶替时，旧请求的结果不再写缓存，避免慢的旧结果覆盖新值
+      if (ctx.inflight.get(key) === pending) {
+        ctx.cache.set(key, { at: Date.now(), value });
+        while (ctx.cache.size > CACHE_MAX) {
+          const oldest = ctx.cache.keys().next().value;
+          if (oldest === undefined) break;
+          ctx.cache.delete(oldest);
+        }
       }
       return value;
     } finally {
-      ctx.inflight.delete(key);
+      // 只有自己仍是当前在飞请求时才注销，避免删掉后来者（force 重发）的登记
+      if (ctx.inflight.get(key) === pending) ctx.inflight.delete(key);
     }
   })();
   ctx.inflight.set(key, pending);

@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import PDFDocument from 'pdfkit';
 import { clean, parseTerm } from './common.mjs';
 
@@ -34,11 +35,45 @@ const FONT_CANDIDATES = [
   '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf',
 ];
 
+// Windows 常见的中文单文件字体（.ttc 集合如 simsun.ttc/msyh.ttc 不能用）
+const WINDOWS_FONT_NAMES = ['simhei.ttf', 'simkai.ttf', 'simfang.ttf', 'Deng.ttf', 'msyh.ttf', 'NotoSansSC-Regular.otf'];
+const WINDOWS_NAME_RE = /(?:simhei|simkai|simfang|deng|msyh|notosanssc|sourcehansans|wqy|arphic)/i;
+
+/** 当前平台常见的字体路径；Linux/macOS 不适用时返回空数组。 */
+function platformFontCandidates(env = process.env) {
+  if (process.platform === 'win32') {
+    const dir = join(env.WINDIR || 'C:\\Windows', 'Fonts');
+    const list = WINDOWS_FONT_NAMES.map((name) => join(dir, name));
+    // 目录扫描兜底：覆盖字体文件名大小写/版本差异，只收单文件 TTF/OTF。
+    try {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.isFile() || !/\.(ttf|otf)$/i.test(entry.name)) continue;
+        if (!WINDOWS_NAME_RE.test(entry.name)) continue;
+        list.push(join(dir, entry.name));
+      }
+    } catch {
+      /* 字体目录不可读时忽略 */
+    }
+    return list;
+  }
+  if (process.platform === 'darwin') {
+    // PingFang/Songti 是 .ttc，pdfkit 读不了；Arial Unicode 是单文件且含中文。
+    return [
+      '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
+      '/Library/Fonts/Arial Unicode.ttf',
+    ];
+  }
+  return [];
+}
+
 /** ROSTER_PDF_FONT 优先；配了但文件不存在时返回 null（宁可明确失败，也不要静默画成方框） */
 export function resolveRosterFont(env = process.env) {
   const configured = String(env.ROSTER_PDF_FONT || '').trim();
   if (configured) return existsSync(configured) ? configured : null;
-  return FONT_CANDIDATES.find((candidate) => existsSync(candidate)) || null;
+  for (const candidate of [...platformFontCandidates(env), ...FONT_CANDIDATES]) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
 }
 
 export async function buildRosterPdf({

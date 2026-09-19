@@ -568,7 +568,7 @@ async function handleRequest(req, res, scope) {
       if (!fontPath) {
         return json(res, 500, {
           error:
-            '服务器上没有可用的中文字体，无法生成点名册 PDF：请安装中文字体（如 fonts-arphic-gbsn00lp、fonts-wqy-zenhei），或用 ROSTER_PDF_FONT 指定一个 TTF/OTF 字体文件路径；也可以先导出 CSV。',
+            '服务器上没有可用的中文字体，无法生成点名册 PDF：Windows 可安装「黑体/楷体/等线」（simhei.ttf、simkai.ttf、Deng.ttf 等），Linux 可安装 fonts-arphic-gbsn00lp、fonts-wqy-zenhei，macOS 可装 Arial Unicode；也可以用 ROSTER_PDF_FONT 指定一个 TTF/OTF 字体文件路径（不能是 .ttc 集合）；也可以先导出 CSV。',
         });
       }
       const report = await loadRosterReport(s, term, kcdm, skbjdm);

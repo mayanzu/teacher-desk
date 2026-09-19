@@ -1,4 +1,5 @@
 import { parseTable, clean, parseTerm, gbkFormEncode, doubleEncode, safeFileName, requireDownload, requirePage, csvCell } from './common.mjs';
+import { fetchConcurrency, mapWithConcurrency } from './concurrency.mjs';
 
 export async function getProgress(session, term) {
   const { xn, xq } = parseTerm(term);
@@ -488,17 +489,24 @@ export async function getProgressSummary(session, term) {
   if (classes.items.length) {
     const items = [];
     const failures = [];
-    for (const item of classes.items) {
-      let entry;
+    // 每个教学班都要一次上游往返（1~2s），串行会让首次加载随班级数线性变慢；
+    // 并发上限默认 3（JWXT_FETCH_CONCURRENCY 可调，设为 1 回到串行）。
+    const entries = await mapWithConcurrency(classes.items, fetchConcurrency(), async (item) => {
       try {
-        entry = await getProgressEntry(session, term, item.params);
+        return { entry: await getProgressEntry(session, term, item.params) };
       } catch (error) {
         // 登录失效必须整体失败，其余班级异常只记录并继续
         if (error?.status === 401) throw error;
-        failures.push({ className: item.className || item.classCode, message: error instanceof Error ? error.message : '加载失败' });
-        continue;
+        return { failure: { className: item.className || item.classCode, message: error instanceof Error ? error.message : '加载失败' } };
       }
-      if (!entry.rows.length) continue;
+    });
+    classes.items.forEach((item, index) => {
+      const { entry, failure } = entries[index] || {};
+      if (failure) {
+        failures.push(failure);
+        return;
+      }
+      if (!entry?.rows.length) return;
       const weeks = entry.rows.map((row) => Number(row.week)).filter((n) => n > 0);
       items.push({
         kcdm: item.params.kcdm,
@@ -521,7 +529,7 @@ export async function getProgressSummary(session, term) {
           room: row.raw?.skddM || '',
         })),
       });
-    }
+    });
     if (items.length || failures.length) {
       items.sort((a, b) => b.count - a.count);
       return { items, failures };

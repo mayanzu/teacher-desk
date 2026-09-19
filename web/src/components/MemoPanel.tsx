@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { ClipboardList } from './Icons';
 
@@ -55,7 +55,7 @@ function tiltOf(id: string): string {
   return TILTS[hash % TILTS.length];
 }
 
-export function MemoPanel({ userId }: { userId: string }) {
+export const MemoPanel = memo(function MemoPanel({ userId }: { userId: string }) {
   const storageKey = `${STORAGE_KEY}:${encodeURIComponent(userId)}`;
   const [notes, setNotes] = useState<MemoNote[]>(() => loadNotes(storageKey));
   const [draft, setDraft] = useState('');
@@ -177,4 +177,4 @@ export function MemoPanel({ userId }: { userId: string }) {
       </div>
     </section>
   );
-}
+});

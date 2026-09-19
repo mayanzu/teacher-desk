@@ -1,4 +1,5 @@
 import { parseTable, parseTerm } from './common.mjs';
+import { fetchConcurrency, mapWithConcurrency } from './concurrency.mjs';
 
 const GRADE_REGISTERS = [
   {
@@ -53,14 +54,18 @@ export async function getGrades(session, term) {
   const body = `xn=${xn}&xn1=${xn}&xq=${xq}&xq_m=${xq}&hjdm=&bjdm=&ykrs=&zuc=&kcorhj=0&sfkfcjzt=0&kchjC=0&kchj=0&hidKey=&hidOption=QRY`;
   const items = [];
   let responded = false;
-  for (const register of GRADE_REGISTERS) {
-    const res = await session.text(`/ahsljw/taglib/DataTable.jsp?tableId=${register.tableId}`, {
+  // 三张登记表彼此独立：先并发拉回，再按下标顺序解析，结果与串行时完全一致
+  const responses = await mapWithConcurrency(GRADE_REGISTERS, fetchConcurrency(), (register) =>
+    session.text(`/ahsljw/taglib/DataTable.jsp?tableId=${register.tableId}`, {
       method: 'POST',
       referer: `${session.base}/ahsljw/wjstgdfw/${register.page}`,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
       body,
-    });
-    const rows = parseTable(res.text);
+    }),
+  );
+  for (let index = 0; index < GRADE_REGISTERS.length; index += 1) {
+    const register = GRADE_REGISTERS[index];
+    const rows = parseTable(responses[index].text);
     const headerIndex = rows.findIndex((row) => row.includes(register.header));
     if (headerIndex < 0) throw Object.assign(new Error('成绩登记册页面结构异常'), { status: 502 });
     responded = true;

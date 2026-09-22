@@ -1,4 +1,4 @@
-import { clean, parseTerm, requireDownload, doubleEncode, safeFileName, requirePage } from './common.mjs';
+import { clean, parseTerm, requireDownload, doubleEncode, safeFileName, requirePage, headText } from './common.mjs';
 
 const COURSE_GRADE_LIST_TABLE = '5013';
 // 学号：连续的数字/字母串；用于把表头行与数据行区分开
@@ -14,6 +14,75 @@ const COURSE_GRADE_FILES = {
 function courseGradeReportFile(flag, dyfs) {
   if (String(flag) === '2') return COURSE_GRADE_FILES.effective;
   return String(dyfs) === 'sl' ? COURSE_GRADE_FILES.originalTwo : COURSE_GRADE_FILES.originalSingle;
+}
+
+// ===== 学校专属报表页（教务按 G_SCHOOL_CODE 分流，如 109591 的成绩页含最新 40-0 分数段） =====
+const SCHOOL_CODE_RE = /G_SCHOOL_CODE\s*=\s*['"]?([A-Za-z0-9_]+)/;
+const SCHOOL_CODE_RETRY_MS = 60_000;
+const SCHOOL_CODE_TIMEOUT_MS = 5_000;
+const schoolCodeCache = new Map(); // base -> { code, permanent, at }
+const reportFileChoice = new Map(); // `${base}|${flag}|${dyfs}|exp|view` -> 已验证可用的文件名
+
+const pageMissing = (error) => /HTTP\s*404/.test(String(error?.message ?? ''));
+
+/** 学校代码来自 SetRootPath.jsp：成功解析即长期缓存；失败只冷却重试，期间按通用页走。 */
+async function schoolCode(session) {
+  const now = Date.now();
+  const hit = schoolCodeCache.get(session.base);
+  if (hit && (hit.permanent || now - hit.at < SCHOOL_CODE_RETRY_MS)) return hit.code;
+  try {
+    const res = await session.text('/ahsljw/custom/js/SetRootPath.jsp', {
+      method: 'GET',
+      referer: `${session.base}/ahsljw/wjstgdfw/${COURSE_GRADE_REPORT_PAGE}`,
+      signal: AbortSignal.timeout(SCHOOL_CODE_TIMEOUT_MS),
+    });
+    const code = res.text.match(SCHOOL_CODE_RE)?.[1] ?? '';
+    schoolCodeCache.set(session.base, { code, permanent: true, at: now });
+    return code;
+  } catch {
+    schoolCodeCache.set(session.base, { code: '', permanent: false, at: now });
+    return '';
+  }
+}
+
+/**
+ * 成绩报表页：学校专属页优先（含最新分数段统计），404 回退通用页并缓存结论。
+ * nameOnly=true 时只为解析可用文件名（PDF pageurl 用），已验证过的文件不再取回内容；
+ * binary=true 时按 buffer 取回（Excel 导出用）。
+ */
+async function loadCourseGradePage(session, { flag, dyfs, exp = false, qs, nameOnly = false, binary = false }) {
+  const generic = courseGradeReportFile(flag, dyfs);
+  const genericFile = exp ? generic.replace('_data.jsp', '_data_exp.jsp') : generic;
+  const key = `${session.base}|${flag}|${dyfs}|${exp ? 'exp' : 'view'}`;
+  const decided = reportFileChoice.get(key);
+  const code = decided ? '' : await schoolCode(session);
+  const schoolFile = !decided && code ? genericFile.replace('_data', `${code}_data`) : null;
+  const candidates = [];
+  for (const file of [decided, schoolFile, genericFile]) {
+    if (file && !candidates.includes(file)) candidates.push(file);
+  }
+  const referer = `${session.base}/ahsljw/wjstgdfw/${COURSE_GRADE_REPORT_PAGE}`;
+  for (let index = 0; index < candidates.length; index += 1) {
+    const file = candidates[index];
+    // 已验证过的文件（或通用页兜底）在 nameOnly 模式下无需再取回内容
+    if (nameOnly && (file === decided || file === genericFile)) {
+      reportFileChoice.set(key, file);
+      return { file };
+    }
+    try {
+      const path = `/ahsljw/wjstgdfw/${file}?${qs}`;
+      const res = binary
+        ? await session.request(path, { method: 'GET', referer })
+        : await session.text(path, { method: 'GET', referer });
+      reportFileChoice.set(key, file);
+      return { file, res };
+    } catch (error) {
+      if (!pageMissing(error)) throw error;
+      reportFileChoice.delete(key); // 结论过期（页面被下线）→ 重新决策
+      if (index === candidates.length - 1) throw error;
+    }
+  }
+  throw Object.assign(new Error('成绩页面结构异常，请稍后重试'), { status: 502 });
 }
 
 function courseGradeReportQuery({ xn, xq, kcdm, bjdm, bjmc, flag, dyfs, qmzhC }) {
@@ -92,7 +161,6 @@ export async function getCourseGradesReport(session, params) {
   const { xn, xq } = parseTerm(params.term);
   const flag = String(params.flag ?? '1');
   const dyfs = String(params.dyfs ?? 'dl');
-  const file = courseGradeReportFile(flag, dyfs);
   const qs = courseGradeReportQuery({
     xn,
     xq,
@@ -103,10 +171,7 @@ export async function getCourseGradesReport(session, params) {
     dyfs,
     qmzhC: params.qmzhC,
   });
-  const res = await session.text(`/ahsljw/wjstgdfw/${file}?${qs}`, {
-    method: 'GET',
-    referer: `${session.base}/ahsljw/wjstgdfw/${COURSE_GRADE_REPORT_PAGE}`,
-  });
+  const { res } = await loadCourseGradePage(session, { flag, dyfs, qs });
   const html = res.text.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ');
   const tables = [...html.matchAll(/<table[\s\S]*?<\/table>/gi)].map((m) => m[0]);
 
@@ -140,7 +205,9 @@ export async function getCourseGradesReport(session, params) {
     break;
   }
 
-  if (!header.length) throw Object.assign(new Error('成绩页面结构异常，请稍后重试'), { status: 502 });
+  if (!header.length && !(tables.length === 0 && /没有检索到记录/.test(res.text))) {
+    throw Object.assign(new Error('成绩页面结构异常，请稍后重试'), { status: 502 });
+  }
   return {
     term: params.term,
     kcdm: params.kcdm,
@@ -191,7 +258,6 @@ export async function exportCourseGradesPdf(session, params) {
   const { xn, xq } = parseTerm(params.term);
   const flag = String(params.flag ?? '1');
   const dyfs = String(params.dyfs ?? 'dl');
-  const file = courseGradeReportFile(flag, dyfs);
   const qs = courseGradeReportQuery({
     xn,
     xq,
@@ -202,6 +268,8 @@ export async function exportCourseGradesPdf(session, params) {
     dyfs,
     qmzhC: params.qmzhC,
   });
+  // pageurl 用教务同款报表页：本校（109591）是学校专属页，含最新 40-0 分数段统计
+  const { file } = await loadCourseGradePage(session, { flag, dyfs, qs, nameOnly: true });
   const pageurl = `wjstgdfw/${file}?${qs}`;
   const title = params.title || '分课程按行政班级查看成绩';
   const body = `pageurl=${doubleEncode(pageurl)}&pageSize=A4&orientation=P&top=0&bottom=10&left=10&right=10&title=${doubleEncode(title)}`;
@@ -243,11 +311,34 @@ export async function exportCourseGradesPdf(session, params) {
 
 export async function exportCourseGradesExcel(session, params) {
   const { xn, xq } = parseTerm(params.term);
-  const qs = `exptype=kcxzbjcj&xn=${xn}&xq=${xq}&kcdm=${encodeURIComponent(params.kcdm ?? '')}&bjdm=${encodeURIComponent(params.bjdm ?? '')}&flag=${String(params.flag ?? '1') === '2' ? '2' : '1'}`;
-  const res = await session.request(`/ahsljw/jw/output/excel.action?${qs}`, {
-    method: 'GET',
-    referer: `${session.base}/ahsljw/wjstgdfw/${COURSE_GRADE_REPORT_PAGE}`,
+  const flag = String(params.flag ?? '1') === '2' ? '2' : '1';
+  const dyfs = String(params.dyfs ?? 'dl');
+  const qs = courseGradeReportQuery({
+    xn,
+    xq,
+    kcdm: params.kcdm,
+    bjdm: params.bjdm,
+    bjmc: params.bjmc,
+    flag,
+    dyfs,
+    qmzhC: params.qmzhC,
   });
-  return { filename: `${safeFileName(params.fileName, '成绩')}.xls`, buffer: requireDownload(res, 'xls') };
+  let res;
+  try {
+    // 教务页面「导出」按钮现走 _data_exp.jsp（学校专属页含 40-0 分数段），旧 excel.action 已弃用
+    ({ res } = await loadCourseGradePage(session, { flag, dyfs, exp: true, qs, binary: true }));
+  } catch (error) {
+    if (!pageMissing(error)) throw error;
+    const legacy = `exptype=kcxzbjcj&xn=${xn}&xq=${xq}&kcdm=${encodeURIComponent(params.kcdm ?? '')}&bjdm=${encodeURIComponent(params.bjdm ?? '')}&flag=${flag}`;
+    res = await session.request(`/ahsljw/jw/output/excel.action?${legacy}`, {
+      method: 'GET',
+      referer: `${session.base}/ahsljw/wjstgdfw/${COURSE_GRADE_REPORT_PAGE}`,
+    });
+  }
+  const buffer = requireDownload(res, 'xls');
+  if (/没有检索到记录/.test(headText(buffer))) {
+    throw Object.assign(new Error('该班级暂无成绩记录'), { status: 404 });
+  }
+  return { filename: `${safeFileName(params.fileName, '成绩')}.xls`, buffer };
 }
 

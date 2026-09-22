@@ -144,7 +144,7 @@ export function safeFileName(value, fallback) {
   return String(value ?? '').replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^_+|_+$/g, '') || fallback;
 }
 
-function headText(bytes, length = 2000) {
+export function headText(bytes, length = 2000) {
   const head = Buffer.from(bytes.subarray(0, length));
   return `${head.toString('utf8')}\n${iconv.decode(head, 'gbk')}`;
 }
@@ -161,7 +161,7 @@ export function requireDownload(result, format) {
   const bytes = result.buffer;
   const type = result.response.headers.get('content-type') || '';
   const head = headText(bytes);
-  const loginLike = /登录|登陆|login|统一身份|Service unavailable|系统异常|请稍后|错误/i.test(head);
+  const loginLike = /登录|登陆|login|统一身份|Service unavailable|系统异常|系统访问异常|异常处理页面|异常信息|请稍后|错误/i.test(head);
   const valid = format === 'pdf'
     ? /^\s*%PDF-/.test(bytes.subarray(0, 32).toString('latin1'))
     : looksLikeExcel(bytes, type, head);

@@ -9,6 +9,7 @@ import { cached, sweepAllCaches } from './cache.mjs';
 import { createScope, currentScope, logScope, runWithScope, withPriority } from './perf.mjs';
 import { fetchConcurrency, mapWithConcurrency } from './jwxt/concurrency.mjs';
 import { shouldWarmUp, warmUp } from './warmup.mjs';
+import { startKeepAlive } from './keepAlive.mjs';
 import { contextFor, persistSession, rotateContext, dropContext, resetContextCaches, sweepSessions } from './sessionStore.mjs';
 import { getTasks, getTerms, getProgress, getGrades, buildProgressPayload, saveProgressEntry, getProgressCopyTerms, getProgressCopyClasses, copyProgressFromClass, buildProgressCsv, getRoster, buildRosterCsv, buildRosterListHtml, getCourseGradeClasses, getCourseGradesReport, exportCourseGradesPdf, exportCourseGradesExcel, exportProgressPdf } from './jwxt/index.mjs';
 import { buildRosterPdf, resolveRosterFont } from './jwxt/rosterPdf.mjs';
@@ -718,6 +719,8 @@ server.listen(config.port, process.env.HOST || '127.0.0.1', () => {
   setInterval(sweepSessions, 60 * 60 * 1000).unref();
   // 过期缓存主动释放（review R07）：TTL 不再只决定命中，也决定回收。
   setInterval(() => sweepAllCaches(), 5 * 60 * 1000).unref();
+  // 服务端会话保活：页面关着也定时探一次教务，刷新上游闲置计时（JWXT_KEEPALIVE_MS=0 关闭）
+  startKeepAlive();
 });
 
 server.on('error', (error) => {

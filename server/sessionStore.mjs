@@ -5,6 +5,10 @@
  *   - 扫码登录流程
  *   - 数据缓存（带字节预算，见 cache.mjs）
  * 会话按 sid 持久化到 SESSION_DIR/<sid>.json，重启后可恢复，互不干扰。
+ * 启动时可用 restorePersistedSessions() 预热回内存，让保活心跳跨重启接续。
+ *
+ * 时间戳两层：lastUserSeen 只随真实浏览器请求走（保活窗口的依据），
+ * lastSeen 还会随保活心跳顺延（sweepSessions 的回收依据），见 keepAlive.mjs。
  *
  * 会话代际 generation（review R04）：登录态轮换、退出、清理缓存时递增。
  * 后台预热 / 预取任务在入队、出队、写缓存前都要校验代际，避免旧会话结果回填。
@@ -23,7 +27,10 @@ const SID_RE = /^[a-f0-9]{36}$/;
 const IDLE_TTL = 7 * 24 * 60 * 60 * 1000; // 已登录会话：7 天未活动即回收
 const ANON_TTL = 30 * 60 * 1000; // 匿名上下文：30 分钟未活动即回收
 const MAX_CONTEXTS = 500; // 内存中同时保留的会话上下文上限
-const MAX_AGE = Math.floor(IDLE_TTL / 1000);
+// Cookie 有效期要盖过保活窗口（默认 30 天）再加 7 天余量，并随每次请求滚动续期（见 contextFor），
+// 否则浏览器会先于服务端丢掉 td_sid，保活窗口就白设了。Cookie 只是会话 ID，
+// 真正的校验在服务端（会话文件 + 上游探活），长一点没有安全影响。
+const MAX_AGE = Math.floor((config.keepAliveMaxIdleMs + IDLE_TTL) / 1000);
 // 会话文件时间戳最多每 60 秒刷一次盘（review R13）：每个已登录请求都 utimes 会阻塞事件循环。
 const TOUCH_INTERVAL = Number(process.env.JWXT_SESSION_TOUCH_MS) >= 0
   ? Number(process.env.JWXT_SESSION_TOUCH_MS)
@@ -80,17 +87,67 @@ function createContext(sid) {
     exports: new CacheStore({ max: 20, maxBytes: EXPORT_CACHE_BYTES, name: 'exports' }),
     inflight: new Map(),
     lastSeen: Date.now(),
+    // 最后一次「真实用户访问」：只有 contextFor（浏览器请求）会刷新。
+    // 保活心跳只顺延 lastSeen、不动它——保活窗口（keepAliveMaxIdleMs）据此判断，
+    // 避免心跳自己把自己续成永久会话。
+    lastUserSeen: Date.now(),
     lastTouch: 0,
     generation: 0,
   };
+}
+
+/**
+ * 启动时把仍在有效期（7 天内活动过）的持久化会话恢复进内存。
+ * 没有这一步，服务重启后 contexts 为空、保活心跳无从谈起：
+ * 用户下线期间容器重启一次，上游会话就会随闲置超时死掉。
+ * 会话文件的 mtime 就是「最后活动」（真实请求与心跳都会刷新它，节流见 touchSessionFile），
+ * 据此恢复空闲计时，保活窗口不会被一次重启清零。
+ */
+export function restorePersistedSessions() {
+  if (!existsSync(config.sessionDir)) return 0;
+  let restored = 0;
+  try {
+    for (const name of readdirSync(config.sessionDir)) {
+      if (!name.endsWith('.json')) continue;
+      const sid = name.slice(0, -5);
+      if (!SID_RE.test(sid) || contexts.has(sid)) continue;
+      const loaded = loadPersisted(sid);
+      if (!loaded) continue;
+      const ctx = createContext(sid);
+      ctx.session = loaded.session;
+      ctx.lastSeen = loaded.mtimeMs;
+      ctx.lastUserSeen = loaded.mtimeMs;
+      contexts.set(sid, ctx);
+      restored += 1;
+    }
+    evictOverflow();
+  } catch (error) {
+    console.warn('[session] 启动恢复会话失败：', error instanceof Error ? error.message : error);
+  }
+  return restored;
+}
+
+/** 当前带登录态的上下文快照，供保活心跳遍历（快照，遍历期间可安全增删 contexts）。 */
+export function loggedInContexts() {
+  return [...contexts.values()].filter((ctx) => ctx.session);
+}
+
+/**
+ * 保活探活成功后顺延空闲计时：只动 lastSeen（sweepSessions 的回收依据）与会话文件时间戳，
+ * 不动 lastUserSeen（真实访问时间，保活窗口据此到期后自动停止）。
+ */
+export function touchAlive(ctx) {
+  ctx.lastSeen = Date.now();
+  touchSessionFile(ctx);
 }
 
 function loadPersisted(sid) {
   const file = sidFile(sid);
   if (!existsSync(file)) return null;
   try {
-    if (Date.now() - statSync(file).mtimeMs > IDLE_TTL) return null;
-    return JwxtSession.deserialize(readFileSync(file, 'utf8'));
+    const mtimeMs = statSync(file).mtimeMs;
+    if (Date.now() - mtimeMs > IDLE_TTL) return null;
+    return { session: JwxtSession.deserialize(readFileSync(file, 'utf8')), mtimeMs };
   } catch {
     return null;
   }
@@ -107,31 +164,28 @@ function touchSessionFile(ctx) {
 export function contextFor(req, res) {
   const cookies = parseCookies(req.headers.cookie);
   let sid = cookies[COOKIE];
-  let assign = false;
   let loaded = null;
   if (!sid || !SID_RE.test(sid)) {
     sid = randomBytes(18).toString('hex');
-    assign = true;
   } else if (!contexts.has(sid)) {
     // 同一 sid 只在这里读一次磁盘；恢复失败会换新 sid。
     loaded = loadPersisted(sid);
-    if (!loaded) {
-      sid = randomBytes(18).toString('hex');
-      assign = true;
-    }
+    if (!loaded) sid = randomBytes(18).toString('hex');
   }
   let ctx = contexts.get(sid);
   if (!ctx) {
     ctx = createContext(sid);
-    if (loaded) ctx.session = loaded;
+    if (loaded) ctx.session = loaded.session;
     contexts.set(sid, ctx);
     evictOverflow();
   }
+  // contextFor 只会被浏览器请求触发，所以这里就是「真实用户活动」。
   ctx.lastSeen = Date.now();
+  ctx.lastUserSeen = Date.now();
   if (ctx.session) touchSessionFile(ctx);
-  if (assign) {
-    setCookie(res, sid);
-  }
+  // 滚动续期：每次响应都重发会话 Cookie，浏览器侧的过期时间跟着最后一次访问走，
+  // 30 天保活窗口不会被 Cookie 的固定有效期先掐断。
+  setCookie(res, sid);
   return ctx;
 }
 

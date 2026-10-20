@@ -18,6 +18,23 @@ async function checkSession(session) {
   }
 }
 
+export async function probeActivity(ctx) {
+  const session = ctx.session;
+  if (!session) return false;
+  const pageUrl = session.landingUrl || '/ahsljw/frame/homes.action';
+  const page = await session.text(pageUrl, { method: 'GET' });
+  if (page.status !== 200) throw Object.assign(new Error('会话状态暂时无法验证'), { status: 503 });
+  if (/kingo\.guest/i.test(page.text)) return false;
+  if (/_loginid\s*=\s*'[^']+'/.test(page.text)) return true;
+  if (/未登录|登录超时|重新登录|会话已过期|凭证已失效|cas\/login\.action/i.test(page.text)) return false;
+
+  const info = await session.text('/ahsljw/frame/home/js/SetMainInfo.jsp', { method: 'GET' });
+  if (info.status !== 200) throw Object.assign(new Error('会话状态暂时无法验证'), { status: 503 });
+  if (/kingo\.guest/i.test(info.text)) return false;
+  if (/_loginid\s*=\s*'[^']+'/.test(info.text)) return true;
+  throw Object.assign(new Error('无法识别教务会话状态'), { status: 502 });
+}
+
 /**
  * 会话存活探测：每次调用都会真的打一次教务（SetMainInfo.jsp，实测单次 0.4~2s）。
  * 每个受保护接口前面都会先 ensureSession() 探测一次，于是数据缓存即使命中，

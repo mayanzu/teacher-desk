@@ -7,7 +7,7 @@
  *
  *  - 只保活 config.keepAliveMaxIdleMs（默认 30 天）内有过真实访问的会话；
  *    超窗后停止保活，lastSeen 冻结，7 天后由 sweepSessions 正常回收。
- *  - 只有「确认掉线」（sessionAlive 返回 false：kingo.guest / 跳登录页 / 401）
+ *  - 只有「确认掉线」（probeActivity 返回 false：kingo.guest / 跳登录页 / 401）
  *    才 dropContext；网络抖动、上游 5xx 一律不清理、留给下一轮，避免误杀。
  *  - 复用统一调度器且低优先级（与 warmup 同待遇），不与用户请求抢额度。
  *  - JWXT_KEEPALIVE_MS=0 关闭；启动时先恢复持久化会话，重启不打断保活。
@@ -15,7 +15,7 @@
 import { config } from './config.mjs';
 import { createScope, logScope, runWithScope } from './perf.mjs';
 import { fetchConcurrency, mapWithConcurrency } from './jwxt/concurrency.mjs';
-import { sessionAlive } from './sessionHealth.mjs';
+import { probeActivity } from './sessionHealth.mjs';
 import { dropContext, loggedInContexts, restorePersistedSessions, touchAlive } from './sessionStore.mjs';
 
 // 探活失败日志节流：教务长时间不可用时，避免每个周期为同一会话刷一行
@@ -58,7 +58,7 @@ export async function keepAliveTick(options = {}) {
         if (loginStatus && loginStatus !== 'idle' && loginStatus !== 'error') return;
         probed += 1;
         try {
-          const alive = await sessionAlive(ctx);
+          const alive = await probeActivity(ctx);
           if (!ctx.session) return;
           if (!alive) {
             // 确认掉线：清理本地登录态，前端下次轮询 /api/session 自动回到登录页

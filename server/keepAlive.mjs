@@ -40,9 +40,11 @@ export async function keepAliveTick(options = {}) {
   const windowMs = options.maxIdleMs ?? config.keepAliveMaxIdleMs;
   const targets = (options.targets ?? loggedInContexts())
     .filter((ctx) => ctx.session && now - (ctx.lastUserSeen ?? now) < windowMs);
-  if (!targets.length) return { probed: 0, dropped: 0 };
+  if (!targets.length) return { probed: 0, ok: 0, failed: 0, dropped: 0 };
 
   let probed = 0;
+  let ok = 0;
+  let failed = 0;
   let dropped = 0;
   const scope = createScope({ label: 'keepalive', priority: 'low', background: true });
   try {
@@ -65,8 +67,10 @@ export async function keepAliveTick(options = {}) {
             console.warn(`[keepalive] ${ctx.sid} 登录态已失效，已清理（下次访问需重新扫码）`);
             return;
           }
+          ok += 1;
           touchAlive(ctx);
         } catch (error) {
+          failed += 1;
           logProbeError(ctx, error);
         }
       });
@@ -74,8 +78,27 @@ export async function keepAliveTick(options = {}) {
   } finally {
     logScope(scope);
   }
-  return { probed, dropped };
+  return { probed, ok, failed, dropped };
 }
+
+/**
+ * 本轮探活是否“完全打不进去”：所有目标都抛错（上游 5xx/不可达），一次也没确认到存活。
+ * 真掉线（dropped）不算：那是探到了上游、只是会话失效，重试再快也没用。
+ */
+export function shouldFastRetry(result) {
+  if (!result || !(result.probed > 0)) return false;
+  return (result.failed ?? 0) >= result.probed && (result.dropped ?? 0) === 0;
+}
+
+/**
+ * 探活全部失败时的重试间隔（毫秒）。
+ *
+ * 为什么需要它：保活的价值在于“定期给上游制造一次有效命中，刷新它的闲置计时器”。
+ * 如果上游连续回 502（实测出现过 09-30→10-12 连续多天），固定 5 分钟一次、失败只等下轮，
+ * 就等于整个 502 期间上游计时器一次也没被刷新，会话最后被上游按闲置超时判死。
+ * 因此“一轮全部失败”时切到更短的间隔，成功一次立刻回到正常周期。
+ */
+export const FAST_RETRY_MS = 90_000;
 
 /**
  * 启动定时保活，返回停止函数。
@@ -91,13 +114,52 @@ export function startKeepAlive() {
   if (restored > 0) console.log(`[keepalive] 已恢复 ${restored} 个持久化会话，跨重启继续保活`);
   console.log(
     `[keepalive] 已启动：每 ${interval / 1000} 秒探活一次；`
+    + `探活全部失败时每 ${FAST_RETRY_MS / 1000} 秒重试；`
     + `${config.keepAliveMaxIdleMs / (24 * 60 * 60 * 1000)} 天无真实访问后停止保活`,
   );
-  const timer = setInterval(() => {
-    void keepAliveTick().catch((error) => {
+
+  let stopped = false;
+  let timer = null;
+  let failureStreak = 0;
+
+  const schedule = (delay) => {
+    if (stopped) return;
+    timer = setTimeout(run, delay);
+    timer.unref();
+  };
+
+  async function run() {
+    timer = null;
+    let result;
+    try {
+      result = await keepAliveTick();
+    } catch (error) {
       console.warn(`[keepalive] 保活轮次失败：${error instanceof Error ? error.message : error}`);
-    });
-  }, interval);
-  timer.unref();
-  return () => clearInterval(timer);
+      schedule(interval);
+      return;
+    }
+    if (shouldFastRetry(result)) {
+      failureStreak += 1;
+      // 日志节流：首轮 + 每 10 轮（约 15 分钟）一条，避免上游长时间不可用时刷屏
+      if (failureStreak === 1 || failureStreak % 10 === 0) {
+        console.warn(
+          `[keepalive] ${result.probed} 个会话全部探活失败（连续 ${failureStreak} 轮），`
+          + `${FAST_RETRY_MS / 1000} 秒后重试`,
+        );
+      }
+      schedule(FAST_RETRY_MS);
+      return;
+    }
+    if (failureStreak > 0) {
+      console.log(`[keepalive] 探活已恢复（连续失败 ${failureStreak} 轮），回到 ${interval / 1000} 秒周期`);
+      failureStreak = 0;
+    }
+    schedule(interval);
+  }
+
+  schedule(interval);
+  return () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+  };
 }

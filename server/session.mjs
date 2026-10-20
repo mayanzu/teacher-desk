@@ -88,13 +88,28 @@ export class JwxtSession {
           if (externalSignal?.aborted) throw Object.assign(new Error('请求已取消'), { status: 499, name: 'AbortError' });
           throw Object.assign(new Error('教务系统响应超时，请稍后重试'), { status: 504 });
         }
-        throw Object.assign(new Error('教务系统暂时无法连接，请稍后重试'), { status: 503 });
+        throw Object.assign(new Error(
+          `教务系统暂时无法连接，请稍后重试${error?.cause?.code || error?.code ? `（${error?.cause?.code || error?.code}）` : ''}`,
+        ), { status: 503 });
       }
       addTiming('upstream', performance.now() - startedAt);
       addCount('upstreamRequests');
       if (!response.ok) {
         const auth = response.status === 401 || /cas\/login/i.test(response.headers.get('location') || '');
-        throw Object.assign(new Error(auth ? '登录已过期，请重新扫码' : `教务系统响应异常（HTTP ${response.status}）`), { status: auth ? 401 : 502 });
+        if (auth) throw Object.assign(new Error('登录已过期，请重新扫码'), { status: 401 });
+        // 非鉴权失败（502/503/500…）：只报状态码分不清是 nginx 还是上游应用，把 Server 头
+        // 和返回体前 160 字一起带上，否则保活日志里只剩「HTTP 502」这种无从排查的线索。
+        let detail = '';
+        try {
+          detail = Buffer.from(await response.arrayBuffer()).toString('utf8').replace(/\s+/g, ' ').trim().slice(0, 160);
+        } catch { /* 读不到返回体就只报状态码 */ }
+        const server = response.headers.get('server');
+        const extra = [server ? `Server: ${server}` : '', detail ? `body: ${detail}` : '']
+          .filter(Boolean).join(' | ');
+        throw Object.assign(
+          new Error(`教务系统响应异常（HTTP ${response.status}${extra ? ` — ${extra}` : ''}）`),
+          { status: 502 },
+        );
       }
       this.storeCookies(response);
       const buffer = Buffer.from(await response.arrayBuffer());

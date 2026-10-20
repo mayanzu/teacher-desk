@@ -11,7 +11,7 @@ process.env.SESSION_DIR = join(dir, 'sessions');
 process.env.JWXT_SESSION_PROBE_TTL_MS = '0';
 
 const { config, parseKeepAliveMaxIdleMs, parseKeepAliveMs } = await import('../server/config.mjs');
-const { keepAliveTick } = await import('../server/keepAlive.mjs');
+const { keepAliveTick, shouldFastRetry } = await import('../server/keepAlive.mjs');
 const { JwxtSession } = await import('../server/session.mjs');
 const { contextFor, dropContext, loggedInContexts, restorePersistedSessions } = await import('../server/sessionStore.mjs');
 
@@ -55,6 +55,8 @@ test('保活探活：存活顺延空闲计时，确认掉线才清理，抖动�
   const result = await keepAliveTick({ targets: [alive.ctx, dead.ctx, broken.ctx, inFlight.ctx, anon] });
 
   assert.equal(result.probed, 3, '匿名上下文与登录中的会话被跳过');
+  assert.equal(result.ok, 1, '存活 1 个');
+  assert.equal(result.failed, 1, '抛错 1 个');
   assert.equal(result.dropped, 1);
   assert.equal(alive.calls.n, 1, '存活会话每轮只探一次');
   assert.ok(alive.ctx.session, '存活 → 会话保留');
@@ -75,7 +77,7 @@ test('超过保活窗口（默认 30 天）没有真实访问的会话不再探�
 
   const result = await keepAliveTick({ targets: [ctx] });
 
-  assert.deepEqual(result, { probed: 0, dropped: 0 });
+  assert.deepEqual(result, { probed: 0, ok: 0, failed: 0, dropped: 0 });
   assert.equal(calls.n, 0, '超窗 → 不打上游');
   assert.ok(ctx.session, '超窗 → 不主动清理，由 sweepSessions 按闲置回收');
   assert.equal(ctx.lastSeen, stale, '超窗 → 不顺延');
@@ -113,6 +115,14 @@ test('启动恢复：7 天内的持久化会话回内存，空闲计时续接文
   } finally {
     rmSync(staleFile, { force: true });
   }
+});
+
+test('探活全部失败 → 判定需要快速重试（真掉线/部分成功都不算）', () => {
+  assert.equal(shouldFastRetry({ probed: 2, ok: 0, failed: 2, dropped: 0 }), true, '全部抛错 → 快重试');
+  assert.equal(shouldFastRetry({ probed: 2, ok: 0, failed: 1, dropped: 1 }), false, '一条真掉线说明上游可达');
+  assert.equal(shouldFastRetry({ probed: 2, ok: 1, failed: 1, dropped: 0 }), false, '有成功 → 正常周期');
+  assert.equal(shouldFastRetry({ probed: 0, ok: 0, failed: 0, dropped: 0 }), false, '没有目标 → 不重试');
+  assert.equal(shouldFastRetry(null), false);
 });
 
 test('保活参数解析：0 关闭，非法值回退默认', () => {
